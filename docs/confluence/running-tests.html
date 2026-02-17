@@ -1,0 +1,137 @@
+<h1>Running Performance Tests &mdash; Sensor Performance Testing</h1>
+<p>How to execute test scenarios, monitor them in real-time, and review results.</p>
+
+<h2>VM Roles Recap</h2>
+<table>
+<thead><tr><th>VM</th><th>Sensor</th><th>Scenarios</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>test_perf_1</td><td>No</td><td>No</td><td>Bare OS idle baseline</td></tr>
+<tr><td>test_perf_2</td><td>Yes</td><td>No</td><td>Sensor idle overhead</td></tr>
+<tr><td>test_perf_3</td><td>Yes</td><td>Yes</td><td>Sensor under load</td></tr>
+<tr><td>test_perf_4</td><td>No</td><td>Yes</td><td>Pure workload cost (no sensor)</td></tr>
+</tbody>
+</table>
+
+<h2>Pre-Flight Checklist</h2>
+<ac:task-list>
+<ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>Telegraf running on all test VMs (<code>Get-Service telegraf</code>)</ac:task-body></ac:task>
+<ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>InfluxDB running on MON VM (<code>Get-Process influxd</code>)</ac:task-body></ac:task>
+<ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>Grafana running on MON VM (<code>Get-Service Grafana</code>)</ac:task-body></ac:task>
+<ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>Grafana shows data from all VMs in Host dropdown</ac:task-body></ac:task>
+<ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>Sensor installed on VM2 and VM3</ac:task-body></ac:task>
+<ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>Test scenarios copied to VM3 and VM4</ac:task-body></ac:task>
+</ac:task-list>
+
+<h2>Running All Scenarios</h2>
+<p>SSH into the test VM and run:</p>
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">powershell</ac:parameter><ac:plain-text-body><![CDATA[cd C:\test-scenarios
+powershell -ExecutionPolicy Bypass -File Run-AllScenarios.ps1]]></ac:plain-text-body></ac:structured-macro>
+
+<p>This runs all 13 scenarios in sequence:</p>
+<table>
+<thead><tr><th>#</th><th>Scenario</th><th>Description</th><th>Est. Runtime</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>idle_baseline</td><td>System at rest</td><td>10 min</td></tr>
+<tr><td>2</td><td>file_stress_loop</td><td>File create/rename/delete loop</td><td>~2 min</td></tr>
+<tr><td>3</td><td>registry_storm</td><td>Registry set/delete storm</td><td>~2 min</td></tr>
+<tr><td>4</td><td>network_burst</td><td>HTTP request burst</td><td>~2 min</td></tr>
+<tr><td>5</td><td>process_storm</td><td>Rapid process spawn/terminate</td><td>~2 min</td></tr>
+<tr><td>6</td><td>rpc_generation</td><td>WMI/RPC query loop</td><td>~2 min</td></tr>
+<tr><td>7</td><td>service_cycle</td><td>Service create/start/stop/delete</td><td>~1 min</td></tr>
+<tr><td>8</td><td>user_account_modify</td><td>User account create/modify/delete</td><td>~1 min</td></tr>
+<tr><td>9</td><td>browser_streaming</td><td>Browser streaming session</td><td>5 min</td></tr>
+<tr><td>10</td><td>driver_load</td><td>Driver load via Defender restart</td><td>~1 min</td></tr>
+<tr><td>11</td><td>zip_extraction</td><td>ZIP archive create/extract</td><td>~3 min</td></tr>
+<tr><td>12</td><td>file_storm</td><td>Mass file operations in bursts</td><td>~2 min</td></tr>
+<tr><td>13</td><td>combined_high_density</td><td>All generators in parallel</td><td>7 min</td></tr>
+</tbody>
+</table>
+<p>Between each scenario there is a <strong>60-second pause</strong> for clean separation in Grafana. Total estimated runtime: ~50&ndash;60 minutes.</p>
+
+<h3>Options</h3>
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">powershell</ac:parameter><ac:plain-text-body><![CDATA[# Shorter pauses
+.\Run-AllScenarios.ps1 -PauseBetweenSeconds 30
+
+# Run only specific scenarios
+.\Run-AllScenarios.ps1 -OnlyScenarios @("file_stress_loop", "registry_storm", "network_burst")
+
+# Skip scenarios that need special setup
+.\Run-AllScenarios.ps1 -SkipScenarios @("browser_streaming", "driver_load")]]></ac:plain-text-body></ac:structured-macro>
+
+<h2>Running Individual Scenarios</h2>
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">powershell</ac:parameter><ac:plain-text-body><![CDATA[# File operations
+.\Test-FileStressLoop.ps1 -LoopCount 1000 -Iterations 3
+.\Test-FileStorm.ps1 -FileCount 5000 -Bursts 3
+.\Test-ZipExtraction.ps1 -FileCount 10000 -Iterations 3
+
+# System events
+.\Test-RegistryStorm.ps1 -LoopCount 500 -Iterations 3
+.\Test-ProcessStorm.ps1 -ProcessCount 200 -Bursts 3
+.\Test-NetworkBurst.ps1 -RequestCount 200 -Iterations 3
+.\Test-RpcGeneration.ps1 -QueryCount 300 -Iterations 3
+
+# Admin-required scenarios
+.\Test-ServiceCycle.ps1 -Cycles 10
+.\Test-UserAccountModify.ps1 -Cycles 10
+.\Test-DriverLoad.ps1 -Cycles 3
+
+# Long-running scenarios
+.\Test-IdleBaseline.ps1 -DurationMinutes 60
+.\Test-BrowserStreaming.ps1 -DurationSeconds 300
+.\Test-CombinedHighDensity.ps1 -DurationSeconds 420]]></ac:plain-text-body></ac:structured-macro>
+
+<h2>Running on Multiple VMs Simultaneously</h2>
+<p>For the best comparison, run the same scenarios on VM3 (with sensor) and VM4 (without sensor) at the same time:</p>
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">powershell</ac:parameter><ac:parameter ac:name="title">Terminal 1 - VM3 (sensor)</ac:parameter><ac:plain-text-body><![CDATA[ssh admin@172.46.16.176
+cd C:\test-scenarios
+powershell -ExecutionPolicy Bypass -File Run-AllScenarios.ps1]]></ac:plain-text-body></ac:structured-macro>
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">powershell</ac:parameter><ac:parameter ac:name="title">Terminal 2 - VM4 (no sensor)</ac:parameter><ac:plain-text-body><![CDATA[ssh admin@172.46.21.24
+cd C:\test-scenarios
+powershell -ExecutionPolicy Bypass -File Run-AllScenarios.ps1]]></ac:plain-text-body></ac:structured-macro>
+
+<h2>Monitoring Tests in Real-Time</h2>
+<ol>
+<li>Open Grafana (<code>http://172.46.16.24:3000</code>)</li>
+<li>Go to the <strong>ActiveProbe Sensor Performance</strong> dashboard</li>
+<li>Set time range to <strong>Last 30 minutes</strong> with <strong>10s auto-refresh</strong></li>
+<li>Select the test VM(s) in the <strong>Host</strong> dropdown</li>
+<li>Watch metrics update live &mdash; you&rsquo;ll see clear transitions between scenarios</li>
+</ol>
+
+<h2>Reviewing Results</h2>
+
+<h3>In Grafana</h3>
+<ol>
+<li>Set the time range to cover the entire test run</li>
+<li>Use the <strong>Scenario</strong> dropdown to filter by scenario</li>
+<li>Compare hosts by selecting multiple in the <strong>Host</strong> dropdown</li>
+</ol>
+
+<h3>JSON Results</h3>
+<p>Each scenario saves a JSON file on the test VM at <code>C:\PerfTest\results\</code>:</p>
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">powershell</ac:parameter><ac:plain-text-body><![CDATA[# View results as a table
+Get-ChildItem C:\PerfTest\results\*.json |
+    ForEach-Object { Get-Content $_ | ConvertFrom-Json } |
+    Format-Table scenario, duration_seconds, host
+
+# Copy results to your workstation
+scp admin@172.46.16.176:C:\PerfTest\results\*.json C:\results\vm3\
+scp admin@172.46.21.24:C:\PerfTest\results\*.json C:\results\vm4\]]></ac:plain-text-body></ac:structured-macro>
+
+<h2>Adding a New Scenario</h2>
+<ol>
+<li>Create a new <code>Test-YourScenario.ps1</code> in <code>test-scenarios/</code> using the standard template (dot-source <code>ScenarioHelpers.ps1</code>, call <code>Start-Scenario</code> / <code>Complete-Scenario</code>)</li>
+<li>Add it to the <code>$AllScenarios</code> registry in <code>Run-AllScenarios.ps1</code></li>
+<li>Add the scenario name to the list in <code>Switch-Scenario.ps1</code> comments</li>
+</ol>
+
+<h2>Troubleshooting</h2>
+<table>
+<thead><tr><th>Problem</th><th>Solution</th></tr></thead>
+<tbody>
+<tr><td>Scenario fails with &ldquo;Access Denied&rdquo;</td><td>Some scenarios require admin. Run PowerShell as Administrator.</td></tr>
+<tr><td>Telegraf scenario tag not updating</td><td>Check <code>Test-Path C:\InfluxData\telegraf\telegraf.conf</code></td></tr>
+<tr><td>Browser streaming fails</td><td>Requires Microsoft Edge. Skip with <code>-SkipScenarios @("browser_streaming")</code></td></tr>
+<tr><td>Results directory not created</td><td>Run <code>New-Item -ItemType Directory -Path C:\PerfTest\results -Force</code></td></tr>
+</tbody>
+</table>

@@ -1,0 +1,20 @@
+# Tokens and secrets
+*.token
+*.secret
+
+# Test results (generated on VMs)
+results/
+
+# Temp files
+*.tmp
+*.log
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Editor
+.vscode/
+*.swp
+*.swo
+*~

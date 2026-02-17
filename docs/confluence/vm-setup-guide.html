@@ -1,0 +1,126 @@
+<h1>VM Setup Guide &mdash; Sensor Performance Testing</h1>
+<p>Complete step-by-step guide for setting up the performance testing environment from scratch.</p>
+
+<h2>Overview</h2>
+<p>The environment consists of:</p>
+<ul>
+<li><strong>1 MON VM</strong> (Small: 2 CPU / 4 GB) &mdash; runs InfluxDB and Grafana</li>
+<li><strong>2&ndash;4 Test VMs</strong> (Large: 8 CPU / 16 GB) &mdash; run Telegraf + test scenarios</li>
+</ul>
+<p>All VMs are Windows 11 Pro (Build 26200), created from a VMware template.</p>
+
+<h2>Step 1: Create VMs</h2>
+<p>Create VMs from the DevOps-provided VMware template:</p>
+<table>
+<thead><tr><th>VM Name</th><th>Size</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>test_perf_mon</td><td>Small (2 CPU / 4 GB)</td><td>Monitoring server</td></tr>
+<tr><td>test_perf_1</td><td>Large (8 CPU / 16 GB)</td><td>No sensor (baseline)</td></tr>
+<tr><td>test_perf_2</td><td>Large (8 CPU / 16 GB)</td><td>Sensor installed, idle</td></tr>
+<tr><td>test_perf_3</td><td>Large (8 CPU / 16 GB)</td><td>Sensor + scenarios</td></tr>
+<tr><td>test_perf_4</td><td>Large (8 CPU / 16 GB)</td><td>No sensor + scenarios</td></tr>
+</tbody>
+</table>
+<ac:structured-macro ac:name="info"><ac:rich-text-body>
+<p><strong>Why these roles?</strong> Having VMs with and without the sensor, both idle and under load, lets you calculate the exact overhead the sensor adds in each condition.</p>
+</ac:rich-text-body></ac:structured-macro>
+
+<h2>Step 2: Enable SSH on All VMs</h2>
+<p>Connect to each VM via VMware console or RDP and run:</p>
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">powershell</ac:parameter><ac:plain-text-body><![CDATA[Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+Start-Service sshd
+Set-Service -Name sshd -StartupType Automatic
+New-NetFirewallRule -Name "OpenSSH-Server" -DisplayName "OpenSSH Server (sshd)" -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 -ErrorAction SilentlyContinue]]></ac:plain-text-body></ac:structured-macro>
+
+<h2>Step 3: Set Up Password-less SSH</h2>
+<p>On your workstation, edit <code>Setup-SSHKeys.ps1</code> and update the <code>$vms</code> array with your VM IPs, then run:</p>
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">powershell</ac:parameter><ac:plain-text-body><![CDATA[powershell -ExecutionPolicy Bypass -File Setup-SSHKeys.ps1]]></ac:plain-text-body></ac:structured-macro>
+<p>This generates an SSH key (if you don't have one), copies it to all VMs, and tests connectivity. You'll need to enter the password once per VM.</p>
+<ac:structured-macro ac:name="note"><ac:rich-text-body>
+<p>The script uses <code>C:\ProgramData\ssh\administrators_authorized_keys</code> because Windows OpenSSH ignores per-user authorized_keys for admin accounts.</p>
+</ac:rich-text-body></ac:structured-macro>
+
+<h2>Step 4: Set Up the MON VM</h2>
+
+<h3>4.1 Copy setup files</h3>
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">powershell</ac:parameter><ac:plain-text-body><![CDATA[scp -r setup-mon admin@172.46.16.24:C:\setup-mon
+scp -r dashboards admin@172.46.16.24:C:\setup-mon\dashboards]]></ac:plain-text-body></ac:structured-macro>
+
+<h3>4.2 Run the setup script</h3>
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">powershell</ac:parameter><ac:plain-text-body><![CDATA[ssh admin@172.46.16.24
+cd C:\setup-mon
+powershell -ExecutionPolicy Bypass -File Setup-MonVM.ps1]]></ac:plain-text-body></ac:structured-macro>
+<p>This installs InfluxDB (as a scheduled task) and Grafana (as a Windows service), and opens firewall ports 8086 and 3000.</p>
+
+<h3>4.3 Configure InfluxDB</h3>
+<p>Open <code>http://&lt;MON_VM_IP&gt;:8086</code> in a browser.</p>
+<ol>
+<li>Complete the setup wizard:
+<ul>
+<li><strong>Username</strong>: <code>admin</code></li>
+<li><strong>Password</strong>: choose a strong password</li>
+<li><strong>Organization</strong>: <code>activeprobe-perf</code></li>
+<li><strong>Bucket</strong>: <code>telegraf</code></li>
+</ul></li>
+<li>On the completion screen, <strong>copy the API token</strong> and save it. You will not be able to see it again.</li>
+<li>Click <strong>Configure Later</strong></li>
+</ol>
+
+<h3>4.4 Configure Grafana</h3>
+<p>Open <code>http://&lt;MON_VM_IP&gt;:3000</code> in a browser.</p>
+<ol>
+<li>Log in with <code>admin</code> / <code>admin</code> (you'll be asked to change the password)</li>
+<li>Go to <strong>Connections</strong> &gt; <strong>Data Sources</strong> &gt; <strong>Add data source</strong> &gt; <strong>InfluxDB</strong></li>
+<li>Configure:
+<ul>
+<li><strong>Query Language</strong>: change dropdown to <strong>Flux</strong> (critical &mdash; default is InfluxQL)</li>
+<li><strong>URL</strong>: <code>http://localhost:8086</code></li>
+<li><strong>Organization</strong>: <code>activeprobe-perf</code></li>
+<li><strong>Token</strong>: paste the API token from step 4.3</li>
+<li><strong>Default Bucket</strong>: <code>telegraf</code></li>
+</ul></li>
+<li>Click <strong>Save &amp; Test</strong> &mdash; should say &ldquo;datasource is working&rdquo;</li>
+</ol>
+
+<h3>4.5 Import dashboards</h3>
+<p><strong>Dashboard 1 &mdash; General Windows Metrics:</strong></p>
+<ol>
+<li>Go to <strong>Dashboards</strong> &gt; <strong>New</strong> &gt; <strong>Import</strong></li>
+<li>Enter ID <strong>22226</strong> and click <strong>Load</strong></li>
+<li>Select your InfluxDB data source, click <strong>Import</strong></li>
+</ol>
+<p><strong>Dashboard 2 &mdash; ActiveProbe Sensor Performance:</strong></p>
+<ol>
+<li>Go to <strong>Dashboards</strong> &gt; <strong>New</strong> &gt; <strong>Import</strong></li>
+<li>Click <strong>Upload dashboard JSON file</strong></li>
+<li>Select <code>sensor-performance-dashboard.json</code></li>
+<li>Select your InfluxDB data source, click <strong>Import</strong></li>
+</ol>
+
+<h2>Step 5: Deploy Telegraf to Test VMs</h2>
+<p>Copy <code>setup-telegraf/</code> to each test VM and run with the appropriate parameters:</p>
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">powershell</ac:parameter><ac:plain-text-body><![CDATA[# No sensor VM:
+powershell -ExecutionPolicy Bypass -File Install-Telegraf.ps1 -MonVmIp "172.46.16.24" -InfluxToken "YOUR_TOKEN" -SensorInstalled "no"
+
+# Sensor VM:
+powershell -ExecutionPolicy Bypass -File Install-Telegraf.ps1 -MonVmIp "172.46.16.24" -InfluxToken "YOUR_TOKEN" -SensorInstalled "yes"]]></ac:plain-text-body></ac:structured-macro>
+<p>Replace <code>YOUR_TOKEN</code> with the actual InfluxDB API token from step 4.3.</p>
+
+<h2>Step 6: Install the ActiveProbe Sensor</h2>
+<p>Install the sensor on the designated VMs (test_perf_2 and test_perf_3) using your standard sensor installation procedure.</p>
+
+<h2>Step 7: Deploy Test Scenarios</h2>
+<p>Copy <code>test-scenarios/</code> to the VMs that will run workloads:</p>
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">powershell</ac:parameter><ac:plain-text-body><![CDATA[scp -r test-scenarios admin@172.46.16.176:C:\test-scenarios
+scp -r test-scenarios admin@172.46.21.24:C:\test-scenarios]]></ac:plain-text-body></ac:structured-macro>
+
+<h2>Verification Checklist</h2>
+<ac:task-list>
+<ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>All VMs reachable via SSH without password</ac:task-body></ac:task>
+<ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>MON VM: InfluxDB running</ac:task-body></ac:task>
+<ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>MON VM: Grafana running</ac:task-body></ac:task>
+<ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>MON VM: Grafana data source shows &ldquo;working&rdquo;</ac:task-body></ac:task>
+<ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>Test VMs: Telegraf running on all</ac:task-body></ac:task>
+<ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>Grafana: All test VM hostnames appear in Host dropdown</ac:task-body></ac:task>
+<ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>Sensor VMs: Sensor processes appear in dashboard</ac:task-body></ac:task>
+</ac:task-list>

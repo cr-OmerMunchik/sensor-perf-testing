@@ -1,0 +1,117 @@
+<h1>Grafana Usage Guide &mdash; Sensor Performance Testing</h1>
+<p>How to use Grafana to monitor, compare, and analyze sensor performance metrics.</p>
+
+<h2>Accessing Grafana</h2>
+<ul>
+<li><strong>URL</strong>: <code>http://&lt;MON_VM_IP&gt;:3000</code> (e.g., <code>http://172.46.16.24:3000</code>)</li>
+<li><strong>Login</strong>: <code>admin</code> / (the password you set during setup)</li>
+</ul>
+
+<h2>Dashboards</h2>
+
+<h3>1. Telegraf Windows Metrics (ID 22226)</h3>
+<p>General OS-level metrics: CPU, memory, disk I/O, network, system overview.</p>
+
+<h3>2. ActiveProbe Sensor Performance (Custom)</h3>
+<p>Purpose-built dashboard for sensor testing:</p>
+<table>
+<thead><tr><th>Panel</th><th>What It Shows</th><th>What to Look For</th></tr></thead>
+<tbody>
+<tr><td>Sensor Process CPU</td><td>CPU % per sensor process</td><td>&lt; 2% idle, &lt; 15% under load</td></tr>
+<tr><td>Sensor Process Memory (Working Set)</td><td>Physical memory per process</td><td>&lt; 350 MB idle, &lt; 500 MB peak</td></tr>
+<tr><td>Sensor Process Private Bytes</td><td>Committed memory per process</td><td>Steady growth = memory leak</td></tr>
+<tr><td>Sensor Process Handles</td><td>Handle count per process</td><td>Steady growth = handle leak</td></tr>
+<tr><td>Sensor Process Threads</td><td>Thread count per process</td><td>Unexpected growth = thread leak</td></tr>
+<tr><td>Sensor Process Disk I/O</td><td>Read/write bytes/sec per process</td><td>Spikes during scenarios are OK</td></tr>
+<tr><td>System CPU with KPI Lines</td><td>Total CPU with threshold markers</td><td>Green &lt; 2%, Yellow &lt; 15%, Red &gt; 15%</td></tr>
+<tr><td>System Memory</td><td>Available memory over time</td><td>Steady decrease = leak somewhere</td></tr>
+<tr><td>System Disk IOPS</td><td>Total disk ops/sec</td><td>Sustained high = disk thrashing</td></tr>
+<tr><td>System Network</td><td>Bytes sent/received per second</td><td>Look for retry storms</td></tr>
+<tr><td>Kernel Pool Memory</td><td>Paged + nonpaged pool bytes</td><td>Growth can indicate driver leaks</td></tr>
+<tr><td>Page Faults/sec</td><td>Memory pressure indicator</td><td>High sustained = memory pressure</td></tr>
+<tr><td>Sensor Service Health</td><td>Running/stopped status per service</td><td>Should all be &ldquo;4&rdquo; (running)</td></tr>
+</tbody>
+</table>
+
+<h2>Using the Dashboard Controls</h2>
+
+<h3>Time Range Picker (top-right)</h3>
+<ul>
+<li><strong>Real-time monitoring</strong>: Select &ldquo;Last 15 minutes&rdquo; or &ldquo;Last 1 hour&rdquo; with auto-refresh ON</li>
+<li><strong>Reviewing a past test</strong>: Set a custom time range covering the test period</li>
+<li><strong>Quick zoom</strong>: Click and drag on any graph to zoom into a time window</li>
+<li><strong>Zoom out</strong>: Click the back arrow next to the time picker</li>
+</ul>
+
+<h3>Auto-Refresh</h3>
+<ul>
+<li>Set to <strong>10s</strong> or <strong>30s</strong> during live monitoring</li>
+<li>Turn <strong>Off</strong> when reviewing historical data</li>
+</ul>
+
+<h3>Template Variables (top of dashboard)</h3>
+<ul>
+<li><strong>Host</strong>: Select one or more VMs. Multi-select lets you compare side by side.</li>
+<li><strong>Scenario</strong>: Filter by test scenario tag</li>
+<li><strong>Sensor Installed</strong>: Filter by yes/no</li>
+</ul>
+
+<h2>Common Tasks</h2>
+
+<h3>Compare sensor overhead (with vs. without)</h3>
+<ol>
+<li>In the <strong>Host</strong> dropdown, select both a sensor VM and a no-sensor VM</li>
+<li>Both lines appear on the same graph with different colors</li>
+<li>The gap between the lines is the sensor overhead</li>
+</ol>
+
+<h3>Compare scenarios</h3>
+<ol>
+<li>Run different scenarios at different times</li>
+<li>Set the time range to cover all scenarios</li>
+<li>Use the <strong>Scenario</strong> dropdown to filter one at a time</li>
+<li>Or view all together &mdash; the pause gaps make them easy to distinguish</li>
+</ol>
+
+<h3>Detect memory or handle leaks</h3>
+<ol>
+<li>Open the <strong>Sensor Process Private Bytes</strong> or <strong>Handle Count</strong> panel</li>
+<li>Set the time range to a long period (e.g., a soak test)</li>
+<li>A steady upward trend (not just spikes) indicates a leak</li>
+<li>Click the panel title &gt; <strong>View</strong> for full-screen detail</li>
+</ol>
+
+<h3>Check if KPIs pass</h3>
+<ol>
+<li>Open the <strong>System CPU with KPI Lines</strong> panel</li>
+<li>Green/yellow/red threshold lines are drawn on the graph</li>
+<li>If CPU stays below green during idle, and below yellow under load, the KPI passes</li>
+</ol>
+
+<h2>KPI Thresholds</h2>
+<table>
+<thead><tr><th>Metric</th><th>Idle Baseline</th><th>Under Load</th><th>Release Gate</th></tr></thead>
+<tbody>
+<tr><td>CPU Usage</td><td>&lt; 2% avg</td><td>&lt; 15% sustained</td><td>Fail if exceeded &gt; 5 min</td></tr>
+<tr><td>Memory (RSS)</td><td>&lt; 350 MB</td><td>&lt; 500 MB peak</td><td>No growth trend over 72h</td></tr>
+<tr><td>Disk IOPS</td><td>Minimal</td><td>No sustained</td><td>No disk thrashing</td></tr>
+<tr><td>Network Usage</td><td>Predictable</td><td>No retry storms</td><td>No spike &gt; SLA</td></tr>
+<tr><td>Detection Latency</td><td>&lt; 300 ms</td><td>&lt; 500 ms</td><td>P95 within SLA</td></tr>
+<tr><td>Boot Impact</td><td>&lt; 5 sec</td><td>N/A</td><td>Fail if &gt; 10 sec</td></tr>
+</tbody>
+</table>
+
+<h2>Grafana Query Tips</h2>
+<p>Go to <strong>Explore</strong> (compass icon, left sidebar) to write custom Flux queries:</p>
+
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">text</ac:parameter><ac:parameter ac:name="title">CPU usage for a specific host</ac:parameter><ac:plain-text-body><![CDATA[from(bucket: "telegraf")
+  |> range(start: -1h)
+  |> filter(fn: (r) => r._measurement == "win_cpu")
+  |> filter(fn: (r) => r._field == "Percent_Processor_Time")
+  |> filter(fn: (r) => r.host == "DESKTOP-H57VD4J")]]></ac:plain-text-body></ac:structured-macro>
+
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">text</ac:parameter><ac:parameter ac:name="title">Sensor process memory</ac:parameter><ac:plain-text-body><![CDATA[from(bucket: "telegraf")
+  |> range(start: -1h)
+  |> filter(fn: (r) => r._measurement == "sensor_process")
+  |> filter(fn: (r) => r._field == "Working_Set")
+  |> filter(fn: (r) => r.instance == "ActiveConsole")]]></ac:plain-text-body></ac:structured-macro>
