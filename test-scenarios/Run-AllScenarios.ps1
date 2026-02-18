@@ -134,6 +134,8 @@ $AllScenarios = [ordered]@{
         Description = "All generators in parallel (7 min)"
         RequiresAdmin = $false
     }
+    # NOTE: soak_test is excluded from Run-AllScenarios by default.
+    # Run it separately: .\Run-SoakTest.ps1 -TotalHours 8
 }
 
 # ---------- Filter scenarios ----------
