@@ -1,3 +1,4 @@
+#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
     Scenario 5: Service Start/Stop Cycle (Low Volume, Precise)

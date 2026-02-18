@@ -36,6 +36,15 @@ Start-Scenario -Name "browser_streaming" `
 
 $browserProcess = "$Browser.exe"
 
+$browserPath = Get-Command $browserProcess -ErrorAction SilentlyContinue
+if (-not $browserPath) {
+    Write-Host "[SKIP] $browserProcess not found on this system. Skipping browser streaming." -ForegroundColor Yellow
+    Add-ScenarioMetric -Key "skipped" -Value $true
+    Add-ScenarioMetric -Key "reason" -Value "$browserProcess not installed"
+    Complete-Scenario
+    return
+}
+
 Write-Host "Launching $browserProcess -> $Url" -ForegroundColor White
 $proc = Start-Process $browserProcess -ArgumentList $Url -PassThru
 

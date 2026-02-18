@@ -49,7 +49,13 @@ if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
 
 # ---------- 1. Browser streaming (background) ----------
 Write-Host "[1/4] Launching browser streaming..." -ForegroundColor Cyan
-$browserProc = Start-Process "msedge.exe" -ArgumentList "https://www.youtube.com/watch?v=dQw4w9WgXcQ" -PassThru
+$browserProc = $null
+$browserExe = Get-Command "msedge.exe" -ErrorAction SilentlyContinue
+if ($browserExe) {
+    $browserProc = Start-Process "msedge.exe" -ArgumentList "https://www.youtube.com/watch?v=dQw4w9WgXcQ" -PassThru
+} else {
+    Write-Host "  [SKIP] msedge.exe not found, skipping browser streaming." -ForegroundColor Yellow
+}
 
 # ---------- 2. File stress loop (background job) ----------
 Write-Host "[2/4] Starting file stress loop (background)..." -ForegroundColor Cyan
@@ -117,9 +123,11 @@ Write-Progress -Activity "Combined High-Density Scenario" -Completed
 # ---------- Stop everything ----------
 Write-Host "`nStopping all generators..." -ForegroundColor Cyan
 
-# Stop browser
-Stop-Process -Name msedge -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 2
+# Stop browser (only if we launched it)
+if ($browserProc) {
+    Stop-Process -Name msedge -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+}
 
 # Collect background job results
 $fileOps = Receive-Job $fileJob -Wait -ErrorAction SilentlyContinue

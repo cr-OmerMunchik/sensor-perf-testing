@@ -26,18 +26,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host " Process Storm Test" -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  Host            : $env:COMPUTERNAME" -ForegroundColor White
-Write-Host "  Processes/burst : $ProcessCount" -ForegroundColor White
-Write-Host "  Bursts          : $Bursts" -ForegroundColor White
+. "$PSScriptRoot\ScenarioHelpers.ps1"
 
-# Switch scenario tag
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-& "$scriptDir\Switch-Scenario.ps1" -Scenario "process_storm"
+Start-Scenario -Name "process_storm" `
+    -Description "Rapid process spawn/terminate ($ProcessCount processes x $Bursts bursts)"
 
-Start-Sleep -Seconds 5
+New-Item -ItemType Directory -Path "C:\PerfTest\results" -Force | Out-Null
 
 $results = @()
 for ($burst = 1; $burst -le $Bursts; $burst++) {
@@ -85,14 +79,16 @@ for ($burst = 1; $burst -le $Bursts; $burst++) {
     }
 }
 
-# ---------- Results ----------
-Write-Host "`n========================================" -ForegroundColor Green
-Write-Host " Process Storm Test COMPLETE" -ForegroundColor Green
-Write-Host "========================================" -ForegroundColor Green
 $results | Format-Table -AutoSize
 
-$resultsFile = "C:\PerfTest\results_process_storm_$(Get-Date -Format 'yyyyMMdd_HHmmss').txt"
-$results | Format-Table -AutoSize | Out-File $resultsFile
-Write-Host "`nResults saved to: $resultsFile" -ForegroundColor Yellow
-Write-Host ""
-Write-Host "Check Grafana for CPU spike duration and recovery time." -ForegroundColor Yellow
+$avgSpawn = ($results | Measure-Object -Property SpawnSec -Average).Average
+$avgTerminate = ($results | Measure-Object -Property TerminateSec -Average).Average
+
+Add-ScenarioMetric -Key "process_count_per_burst" -Value $ProcessCount
+Add-ScenarioMetric -Key "bursts" -Value $Bursts
+Add-ScenarioMetric -Key "avg_spawn_seconds" -Value ([math]::Round($avgSpawn, 2))
+Add-ScenarioMetric -Key "avg_terminate_seconds" -Value ([math]::Round($avgTerminate, 2))
+Add-ScenarioMetric -Key "total_processes_spawned" -Value ($ProcessCount * $Bursts)
+Add-ScenarioMetric -Key "expected_events" -Value "PROCESS_CREATED, PROCESS_ENDED, MODULE_LOADED"
+
+Complete-Scenario

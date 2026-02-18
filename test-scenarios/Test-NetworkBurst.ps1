@@ -55,7 +55,7 @@ for ($iter = 1; $iter -le $Iterations; $iter++) {
             else {
                 $url = $TargetUrl
             }
-            Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
+            Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop | Out-Null
         }
         catch {
             $errors++

@@ -58,80 +58,80 @@ $ErrorActionPreference = "Stop"
 $AllScenarios = [ordered]@{
     "idle_baseline" = @{
         Script = "Test-IdleBaseline.ps1"
-        Params = @{ DurationMinutes = 10 }
-        Description = "Idle baseline (10 min warmup)"
+        Params = @{ DurationMinutes = 15 }
+        Description = "Idle baseline (15 min)"
         RequiresAdmin = $false
     }
     "file_stress_loop" = @{
         Script = "Test-FileStressLoop.ps1"
-        Params = @{ LoopCount = 1000; Iterations = 3 }
-        Description = "File create/rename/delete loop"
+        Params = @{ LoopCount = 5000; Iterations = 100 }
+        Description = "File create/rename/delete loop (~14 min)"
         RequiresAdmin = $false
     }
     "registry_storm" = @{
         Script = "Test-RegistryStorm.ps1"
-        Params = @{ LoopCount = 500; Iterations = 3 }
-        Description = "Registry set/delete storm"
+        Params = @{ LoopCount = 2000; Iterations = 100 }
+        Description = "Registry set/delete storm (~12 min)"
         RequiresAdmin = $false
     }
     "network_burst" = @{
         Script = "Test-NetworkBurst.ps1"
-        Params = @{ RequestCount = 200; Iterations = 3 }
-        Description = "HTTP request burst"
+        Params = @{ RequestCount = 300; Iterations = 50 }
+        Description = "HTTP request burst (~15 min)"
         RequiresAdmin = $false
     }
     "process_storm" = @{
         Script = "Test-ProcessStorm.ps1"
-        Params = @{ ProcessCount = 200; Bursts = 3 }
-        Description = "Rapid process spawn/terminate"
+        Params = @{ ProcessCount = 100; Bursts = 30 }
+        Description = "Rapid process spawn/terminate (~13 min)"
         RequiresAdmin = $false
     }
     "rpc_generation" = @{
         Script = "Test-RpcGeneration.ps1"
-        Params = @{ QueryCount = 300; Iterations = 3 }
-        Description = "WMI/RPC query loop"
+        Params = @{ QueryCount = 500; Iterations = 25 }
+        Description = "WMI/RPC query loop (~15 min)"
         RequiresAdmin = $false
     }
     "service_cycle" = @{
         Script = "Test-ServiceCycle.ps1"
-        Params = @{ Cycles = 10 }
-        Description = "Service create/start/stop/delete"
+        Params = @{ Cycles = 200 }
+        Description = "Service create/start/stop/delete (~7 min)"
         RequiresAdmin = $true
     }
     "user_account_modify" = @{
         Script = "Test-UserAccountModify.ps1"
-        Params = @{ Cycles = 10 }
-        Description = "User account create/modify/delete"
+        Params = @{ Cycles = 200 }
+        Description = "User account create/modify/delete (~5 min)"
         RequiresAdmin = $true
     }
     "browser_streaming" = @{
         Script = "Test-BrowserStreaming.ps1"
-        Params = @{ DurationSeconds = 300 }
-        Description = "Browser streaming session (5 min)"
+        Params = @{ DurationSeconds = 900 }
+        Description = "Browser streaming session (15 min)"
         RequiresAdmin = $false
     }
     "driver_load" = @{
         Script = "Test-DriverLoad.ps1"
-        Params = @{ Cycles = 3 }
-        Description = "Driver load via Defender restart"
+        Params = @{ Cycles = 10 }
+        Description = "Driver load via Defender restart (~3 min)"
         RequiresAdmin = $true
     }
     "zip_extraction" = @{
         Script = "Test-ZipExtraction.ps1"
-        Params = @{ FileCount = 10000; Iterations = 3 }
-        Description = "ZIP extraction workload"
+        Params = @{ FileCount = 10000; Iterations = 10 }
+        Description = "ZIP extraction workload (~12 min)"
         RequiresAdmin = $false
     }
     "file_storm" = @{
         Script = "Test-FileStorm.ps1"
-        Params = @{ FileCount = 5000; Bursts = 3 }
-        Description = "Mass file create/modify/delete bursts"
+        Params = @{ FileCount = 10000; Bursts = 30 }
+        Description = "Mass file create/modify/delete bursts (~12 min)"
         RequiresAdmin = $false
     }
     "combined_high_density" = @{
         Script = "Test-CombinedHighDensity.ps1"
-        Params = @{ DurationSeconds = 420 }
-        Description = "All generators in parallel (7 min)"
+        Params = @{ DurationSeconds = 900 }
+        Description = "All generators in parallel (15 min)"
         RequiresAdmin = $false
     }
     # NOTE: soak_test is excluded from Run-AllScenarios by default.
@@ -150,7 +150,7 @@ foreach ($name in $AllScenarios.Keys) {
 # ---------- Pre-flight ----------
 $scriptDir = $PSScriptRoot
 $totalCount = $scenariosToRun.Count
-$estimatedMinutes = [math]::Round(($totalCount * 5 + $totalCount * $PauseBetweenSeconds / 60), 0)
+$estimatedMinutes = [math]::Round(($totalCount * 13 + $totalCount * $PauseBetweenSeconds / 60), 0)
 
 Write-Host "========================================================" -ForegroundColor Cyan
 Write-Host " Performance Test Suite - All Scenarios" -ForegroundColor Cyan
@@ -201,7 +201,8 @@ foreach ($entry in $scenariosToRun.GetEnumerator()) {
     }
 
     try {
-        & $scriptPath @($config.Params)
+        $params = $config.Params
+        & $scriptPath @params
         $completedScenarios += $name
     }
     catch {

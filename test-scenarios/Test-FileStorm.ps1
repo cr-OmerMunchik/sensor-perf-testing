@@ -26,20 +26,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+. "$PSScriptRoot\ScenarioHelpers.ps1"
+
+Start-Scenario -Name "file_storm" `
+    -Description "Mass file create/modify/delete ($FileCount files x $Bursts bursts)"
+
 $testRoot = "C:\PerfTest\filestorm"
-
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host " File Storm Test" -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  Host       : $env:COMPUTERNAME" -ForegroundColor White
-Write-Host "  Files/burst: $FileCount" -ForegroundColor White
-Write-Host "  Bursts     : $Bursts" -ForegroundColor White
-
-# Switch scenario tag
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-& "$scriptDir\Switch-Scenario.ps1" -Scenario "file_storm"
-
-Start-Sleep -Seconds 5
 
 $results = @()
 for ($burst = 1; $burst -le $Bursts; $burst++) {
@@ -91,18 +83,23 @@ for ($burst = 1; $burst -le $Bursts; $burst++) {
     }
 }
 
-# ---------- Results ----------
-Write-Host "`n========================================" -ForegroundColor Green
-Write-Host " File Storm Test COMPLETE" -ForegroundColor Green
-Write-Host "========================================" -ForegroundColor Green
 $results | Format-Table -AutoSize
 
+$avgCreate = ($results | Measure-Object -Property CreateSec -Average).Average
+$avgModify = ($results | Measure-Object -Property ModifySec -Average).Average
+$avgDelete = ($results | Measure-Object -Property DeleteSec -Average).Average
 $avgTotal = ($results | Measure-Object -Property TotalSec -Average).Average
-Write-Host "Average total time per burst: $([math]::Round($avgTotal, 2)) seconds" -ForegroundColor Cyan
 
-$resultsFile = "C:\PerfTest\results_file_storm_$(Get-Date -Format 'yyyyMMdd_HHmmss').txt"
-$results | Format-Table -AutoSize | Out-File $resultsFile
-Write-Host "`nResults saved to: $resultsFile" -ForegroundColor Yellow
+Add-ScenarioMetric -Key "files_per_burst" -Value $FileCount
+Add-ScenarioMetric -Key "bursts" -Value $Bursts
+Add-ScenarioMetric -Key "avg_create_seconds" -Value ([math]::Round($avgCreate, 2))
+Add-ScenarioMetric -Key "avg_modify_seconds" -Value ([math]::Round($avgModify, 2))
+Add-ScenarioMetric -Key "avg_delete_seconds" -Value ([math]::Round($avgDelete, 2))
+Add-ScenarioMetric -Key "avg_total_seconds" -Value ([math]::Round($avgTotal, 2))
+Add-ScenarioMetric -Key "total_file_operations" -Value ($FileCount * $Bursts * 3)
+Add-ScenarioMetric -Key "expected_events" -Value "FILE_CREATED, FILE_MODIFIED, FILE_DELETED"
 
 # Cleanup
 if (Test-Path $testRoot) { Remove-Item $testRoot -Recurse -Force -ErrorAction SilentlyContinue }
+
+Complete-Scenario

@@ -30,21 +30,15 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+. "$PSScriptRoot\ScenarioHelpers.ps1"
+
+Start-Scenario -Name "zip_extraction" `
+    -Description "ZIP extraction ($FileCount files x $Iterations iterations)"
+
 $testRoot = "C:\PerfTest"
 $sourceDir = "$testRoot\source"
 $zipFile = "$testRoot\test_${FileCount}_files.zip"
 $outputDir = "$testRoot\output"
-
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host " ZIP Extraction Performance Test" -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  Host       : $env:COMPUTERNAME" -ForegroundColor White
-Write-Host "  Files      : $FileCount x $FileSizeBytes bytes" -ForegroundColor White
-Write-Host "  Iterations : $Iterations" -ForegroundColor White
-
-# Switch scenario tag
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-& "$scriptDir\Switch-Scenario.ps1" -Scenario "zip_extraction"
 
 # ---------- Create test data (if needed) ----------
 if (-not (Test-Path $zipFile)) {
@@ -114,23 +108,18 @@ Write-Host "  Min        : $([math]::Round($min, 2)) seconds" -ForegroundColor W
 Write-Host "  Max        : $([math]::Round($max, 2)) seconds" -ForegroundColor White
 Write-Host ""
 
-$resultsFile = "$testRoot\results_zip_extraction_$(Get-Date -Format 'yyyyMMdd_HHmmss').txt"
-$resultText = @"
-ZIP Extraction Test Results
-===========================
-Host       : $env:COMPUTERNAME
-Date       : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-Files      : $FileCount x $FileSizeBytes bytes
-Iterations : $Iterations
+Add-ScenarioMetric -Key "file_count" -Value $FileCount
+Add-ScenarioMetric -Key "file_size_bytes" -Value $FileSizeBytes
+Add-ScenarioMetric -Key "iterations" -Value $Iterations
+Add-ScenarioMetric -Key "avg_extraction_seconds" -Value ([math]::Round($avg, 2))
+Add-ScenarioMetric -Key "min_extraction_seconds" -Value ([math]::Round($min, 2))
+Add-ScenarioMetric -Key "max_extraction_seconds" -Value ([math]::Round($max, 2))
+Add-ScenarioMetric -Key "expected_events" -Value "FILE_CREATED, PROCESS_CREATED, MODULE_LOADED"
+Add-ScenarioMetric -Key "estimated_file_events" -Value ($FileCount * $Iterations)
 
-Results (seconds):
-$($results | ForEach-Object { "  Iteration: $([math]::Round($_, 2))" } | Out-String)
-Average    : $([math]::Round($avg, 2))
-Min        : $([math]::Round($min, 2))
-Max        : $([math]::Round($max, 2))
-"@
-Set-Content -Path $resultsFile -Value $resultText
-Write-Host "Results saved to: $resultsFile" -ForegroundColor Yellow
-Write-Host ""
-Write-Host "Compare with the other VM's results in Grafana:" -ForegroundColor Yellow
-Write-Host "  Select scenario 'zip_extraction' and overlay both hosts." -ForegroundColor White
+# Cleanup
+Remove-Item $outputDir -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item $sourceDir -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item $zipFile -Force -ErrorAction SilentlyContinue
+
+Complete-Scenario

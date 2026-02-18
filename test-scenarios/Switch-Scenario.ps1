@@ -26,8 +26,9 @@ param(
 $confPath = "C:\InfluxData\telegraf\telegraf.conf"
 
 if (-not (Test-Path $confPath)) {
-    Write-Error "Telegraf config not found at $confPath"
-    exit 1
+    Write-Host "[WARN] Telegraf config not found at $confPath - skipping scenario tag switch." -ForegroundColor Yellow
+    Write-Host "       Metrics will not be tagged with scenario='$Scenario'." -ForegroundColor Yellow
+    return
 }
 
 $content = Get-Content $confPath -Raw
@@ -39,6 +40,12 @@ if ($content -eq $newContent) {
 else {
     Set-Content -Path $confPath -Value $newContent -Encoding UTF8
     Write-Host "[OK] Scenario set to: $Scenario" -ForegroundColor Green
+}
+
+$svc = Get-Service telegraf -ErrorAction SilentlyContinue
+if (-not $svc) {
+    Write-Host "[WARN] Telegraf service not found - skipping restart." -ForegroundColor Yellow
+    return
 }
 
 Write-Host "Restarting Telegraf service..." -ForegroundColor Cyan
