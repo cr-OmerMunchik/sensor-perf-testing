@@ -21,6 +21,276 @@
     {
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 500,
+      "title": "KPI Summary",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 2 },
+              { "color": "red", "value": 15 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "id": 501,
+      "title": "Avg Sensor CPU",
+      "description": "Average total sensor CPU usage across all sensor processes for the selected time range. Green < 2%, Yellow < 15%, Red > 15%.",
+      "type": "stat",
+      "options": {
+        "reduceOptions": { "calcs": ["mean"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sensor_process\")\n  |> filter(fn: (r) => r._field == \"Percent_Processor_Time\")\n  |> filter(fn: (r) => r.host =~ /${host:regex}/)\n  |> filter(fn: (r) => r.scenario =~ /${scenario:regex}/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> group(columns: [\"_time\"])\n  |> sum()\n  |> group()\n  |> yield(name: \"total_cpu\")",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 2 },
+              { "color": "red", "value": 15 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "id": 502,
+      "title": "Peak Sensor CPU",
+      "description": "Maximum total sensor CPU spike during the selected time range.",
+      "type": "stat",
+      "options": {
+        "reduceOptions": { "calcs": ["max"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sensor_process\")\n  |> filter(fn: (r) => r._field == \"Percent_Processor_Time\")\n  |> filter(fn: (r) => r.host =~ /${host:regex}/)\n  |> filter(fn: (r) => r.scenario =~ /${scenario:regex}/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> group(columns: [\"_time\"])\n  |> sum()\n  |> group()\n  |> yield(name: \"total_cpu\")",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "decmbytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 350 },
+              { "color": "red", "value": 500 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "id": 503,
+      "title": "Avg Sensor Memory",
+      "description": "Average total sensor memory (Working Set) across all sensor processes. Green < 350 MB, Yellow < 500 MB, Red > 500 MB.",
+      "type": "stat",
+      "options": {
+        "reduceOptions": { "calcs": ["mean"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sensor_process\")\n  |> filter(fn: (r) => r._field == \"Working_Set\")\n  |> filter(fn: (r) => r.host =~ /${host:regex}/)\n  |> filter(fn: (r) => r.scenario =~ /${scenario:regex}/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> group(columns: [\"_time\"])\n  |> sum()\n  |> map(fn: (r) => ({ r with _value: r._value / 1048576.0 }))\n  |> group()\n  |> yield(name: \"total_mem\")",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "decmbytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 350 },
+              { "color": "red", "value": 500 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "id": 504,
+      "title": "Peak Sensor Memory",
+      "description": "Maximum total sensor memory spike during the selected time range.",
+      "type": "stat",
+      "options": {
+        "reduceOptions": { "calcs": ["max"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sensor_process\")\n  |> filter(fn: (r) => r._field == \"Working_Set\")\n  |> filter(fn: (r) => r.host =~ /${host:regex}/)\n  |> filter(fn: (r) => r.scenario =~ /${scenario:regex}/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> group(columns: [\"_time\"])\n  |> sum()\n  |> map(fn: (r) => ({ r with _value: r._value / 1048576.0 }))\n  |> group()\n  |> yield(name: \"total_mem\")",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 510,
+      "title": "Host Comparison",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" }, "inspect": false },
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 15 }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "host" },
+            "properties": [{ "id": "custom.width", "value": 160 }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Avg CPU %" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              { "id": "decimals", "value": 1 },
+              { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 2}, {"color": "red", "value": 15}] } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Peak CPU %" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              { "id": "decimals", "value": 1 },
+              { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 5}, {"color": "red", "value": 15}] } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Avg Mem MB" },
+            "properties": [
+              { "id": "unit", "value": "decmbytes" },
+              { "id": "decimals", "value": 0 },
+              { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 350}, {"color": "red", "value": 500}] } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Peak Mem MB" },
+            "properties": [
+              { "id": "unit", "value": "decmbytes" },
+              { "id": "decimals", "value": 0 },
+              { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 350}, {"color": "red", "value": 500}] } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Avg Handles" },
+            "properties": [{ "id": "decimals", "value": 0 }]
+          }
+        ]
+      },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 6 },
+      "id": 511,
+      "title": "KPI Summary by Host",
+      "description": "Per-host comparison of key sensor metrics. Cells are color-coded against KPI thresholds.",
+      "type": "table",
+      "options": { "showHeader": true, "cellHeight": "sm", "footer": { "show": false } },
+      "transformations": [
+        { "id": "merge", "options": {} }
+      ],
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sensor_process\" and r._field == \"Percent_Processor_Time\")\n  |> filter(fn: (r) => r.host =~ /${host:regex}/)\n  |> filter(fn: (r) => r.scenario =~ /${scenario:regex}/)\n  |> group(columns: [\"host\"])\n  |> mean()\n  |> group()\n  |> keep(columns: [\"host\", \"_value\"])\n  |> rename(columns: {_value: \"Avg CPU %\"})",
+          "refId": "A",
+          "hide": false
+        },
+        {
+          "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sensor_process\" and r._field == \"Percent_Processor_Time\")\n  |> filter(fn: (r) => r.host =~ /${host:regex}/)\n  |> filter(fn: (r) => r.scenario =~ /${scenario:regex}/)\n  |> group(columns: [\"host\"])\n  |> max()\n  |> group()\n  |> keep(columns: [\"host\", \"_value\"])\n  |> rename(columns: {_value: \"Peak CPU %\"})",
+          "refId": "B",
+          "hide": false
+        },
+        {
+          "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sensor_process\" and r._field == \"Working_Set\")\n  |> filter(fn: (r) => r.host =~ /${host:regex}/)\n  |> filter(fn: (r) => r.scenario =~ /${scenario:regex}/)\n  |> map(fn: (r) => ({ r with _value: r._value / 1048576.0 }))\n  |> group(columns: [\"host\"])\n  |> mean()\n  |> group()\n  |> keep(columns: [\"host\", \"_value\"])\n  |> rename(columns: {_value: \"Avg Mem MB\"})",
+          "refId": "C",
+          "hide": false
+        },
+        {
+          "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sensor_process\" and r._field == \"Working_Set\")\n  |> filter(fn: (r) => r.host =~ /${host:regex}/)\n  |> filter(fn: (r) => r.scenario =~ /${scenario:regex}/)\n  |> map(fn: (r) => ({ r with _value: r._value / 1048576.0 }))\n  |> group(columns: [\"host\"])\n  |> max()\n  |> group()\n  |> keep(columns: [\"host\", \"_value\"])\n  |> rename(columns: {_value: \"Peak Mem MB\"})",
+          "refId": "D",
+          "hide": false
+        },
+        {
+          "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+          "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sensor_process\" and r._field == \"Handle_Count\")\n  |> filter(fn: (r) => r.host =~ /${host:regex}/)\n  |> filter(fn: (r) => r.scenario =~ /${scenario:regex}/)\n  |> group(columns: [\"host\"])\n  |> mean()\n  |> group()\n  |> keep(columns: [\"host\", \"_value\"])\n  |> rename(columns: {_value: \"Avg Handles\"})",
+          "refId": "E",
+          "hide": false
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
       "id": 100,
       "title": "Sensor Process Metrics",
       "type": "row"
@@ -42,7 +312,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
       "id": 1,
       "title": "Sensor Process CPU Usage",
       "description": "CPU usage (% Processor Time) per sensor process",
@@ -72,7 +342,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
       "id": 2,
       "title": "Sensor Process Memory (Working Set)",
       "description": "Physical memory (Working Set) per sensor process in MB",
@@ -102,7 +372,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
       "id": 3,
       "title": "Sensor Process Private Bytes",
       "description": "Committed virtual memory (Private Bytes) per process in MB. Watch for growth trends in soak tests.",
@@ -132,7 +402,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
       "id": 4,
       "title": "Sensor Process Handle Count",
       "description": "Open handles per sensor process. Monitor for leaks during soak tests.",
@@ -162,7 +432,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 17 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 30 },
       "id": 5,
       "title": "Sensor Process Thread Count",
       "description": "Active threads per sensor process.",
@@ -192,7 +462,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 17 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 30 },
       "id": 6,
       "title": "Sensor Process Disk I/O",
       "description": "Disk read/write bytes per second per sensor process.",
@@ -207,7 +477,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 38 },
       "id": 200,
       "title": "System-Wide Metrics",
       "type": "row"
@@ -239,7 +509,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 39 },
       "id": 7,
       "title": "System CPU Usage (Total)",
       "description": "System-wide CPU usage. KPI thresholds: <2% idle (green), <15% under load (yellow), >15% sustained (red).",
@@ -269,7 +539,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 39 },
       "id": 8,
       "title": "System Available Memory",
       "description": "Available physical memory (MBytes). Drop indicates memory pressure.",
@@ -299,7 +569,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 34 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 47 },
       "id": 9,
       "title": "System Disk IOPS",
       "description": "Physical disk reads/sec and writes/sec.",
@@ -329,7 +599,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 34 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 47 },
       "id": 10,
       "title": "System Network Throughput",
       "description": "Network bytes sent/received per second.",
@@ -344,7 +614,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 42 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 55 },
       "id": 300,
       "title": "Kernel Pool & Paging",
       "type": "row"
@@ -366,7 +636,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 43 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 56 },
       "id": 11,
       "title": "Kernel Pool Memory (Paged + Non-Paged)",
       "description": "Kernel pool memory usage. Important for detecting driver memory leaks.",
@@ -396,7 +666,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 43 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 56 },
       "id": 12,
       "title": "Page Faults / sec",
       "description": "Hard page faults per second. High values indicate memory thrashing.",
@@ -411,7 +681,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 51 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 64 },
       "id": 400,
       "title": "Service Health",
       "type": "row"
@@ -440,7 +710,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 52 },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 65 },
       "id": 13,
       "title": "Sensor Service Status",
       "description": "Current status of each sensor Windows service. Green=Running, Red=Stopped.",
@@ -469,7 +739,7 @@
         "name": "host",
         "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"telegraf\", tag: \"host\")",
         "refresh": 2,
-        "regex": "",
+        "regex": "/^(?!DESKTOP-).+/",
         "sort": 1,
         "type": "query"
       },
@@ -510,7 +780,7 @@
   "timezone": "",
   "title": "ActiveProbe Sensor Performance",
   "uid": "activeprobe-perf-001",
-  "version": 1,
+  "version": 2,
   "__inputs": [
     {
       "name": "DS_INFLUXDB",
