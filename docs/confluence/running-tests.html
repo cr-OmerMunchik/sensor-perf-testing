@@ -1,6 +1,28 @@
 <h1>Running Performance Tests &mdash; Sensor Performance Testing</h1>
 <p>How to execute test scenarios, monitor them in real-time, and review results.</p>
 
+<h2>Overview</h2>
+
+<h3>What are the test scenarios?</h3>
+<p>The test scenarios are PowerShell scripts that generate specific types of system activity &mdash; file operations, registry writes, network traffic, process spawning, etc. These are the kinds of events that the ActiveProbe sensor monitors and reacts to. By running these workloads on VMs with and without the sensor, you can measure exactly how much overhead the sensor adds.</p>
+
+<h3>How scenarios work with the monitoring stack</h3>
+<p>Each scenario script:</p>
+<ol>
+<li><strong>Tags the metrics</strong> &mdash; Calls <code>Switch-Scenario.ps1</code> which updates the <code>scenario</code> tag in Telegraf&rsquo;s configuration and restarts the service. From that point on, all metrics collected by Telegraf on that VM are tagged with the scenario name (e.g., <code>file_stress_loop</code>).</li>
+<li><strong>Runs the workload</strong> &mdash; Performs the actual system activity (creating files, writing registry keys, spawning processes, etc.)</li>
+<li><strong>Saves results</strong> &mdash; Writes timing and metadata to a JSON file at <code>C:\PerfTest\results\</code> for offline analysis.</li>
+</ol>
+<p>While the scenario runs, Telegraf continues collecting metrics every 10 seconds and sending them to InfluxDB. You can watch the impact in real-time in Grafana, or review it later by filtering on the scenario tag.</p>
+
+<h3>Where to get the scripts</h3>
+<p>All test scenario scripts are in the <code>test-scenarios/</code> folder of the GitHub repository:</p>
+<p><strong><a href="https://github.com/cr-OmerMunchik/sensor-perf-testing">https://github.com/cr-OmerMunchik/sensor-perf-testing</a></strong></p>
+<p>Clone the repo and copy the <code>test-scenarios/</code> folder to the VMs that will run workloads:</p>
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">powershell</ac:parameter><ac:plain-text-body><![CDATA[git clone https://github.com/cr-OmerMunchik/sensor-perf-testing.git
+cd sensor-perf-testing
+scp -r test-scenarios admin@<VM_IP>:C:\test-scenarios]]></ac:plain-text-body></ac:structured-macro>
+
 <h2>VM Roles Recap</h2>
 <table>
 <thead><tr><th>VM</th><th>Sensor</th><th>Scenarios</th><th>Purpose</th></tr></thead>

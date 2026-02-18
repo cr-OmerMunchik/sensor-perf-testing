@@ -4,6 +4,59 @@ Complete step-by-step guide for setting up the performance testing environment f
 
 ## Overview
 
+### What is this?
+
+This guide walks you through setting up an automated performance monitoring environment for the **ActiveProbe (Cybereason) Windows Sensor**. The goal is to measure exactly how much CPU, memory, disk I/O, and other resources the sensor consumes -- both when idle and under various workloads -- so we can ensure it stays within acceptable performance limits.
+
+### Architecture: The TIG Stack
+
+The monitoring infrastructure is based on the **TIG Stack** -- three open-source tools that work together:
+
+```
++------------------+       +------------------+       +------------------+
+|   Test VMs       |       |   MON VM         |       |   Your Browser   |
+|                  |       |                  |       |                  |
+|  Telegraf        | ----> |  InfluxDB        | ----> |  Grafana         |
+|  (data collector)|  HTTP |  (time-series DB)|  query|  (dashboards)    |
++------------------+       +------------------+       +------------------+
+    collects metrics           stores metrics           visualizes metrics
+    every 10 seconds           with timestamps          graphs, comparisons
+```
+
+- **Telegraf** is a lightweight agent that runs on each test VM. It reads Windows Performance Counters every 10 seconds (CPU usage, memory, disk I/O, network, plus per-process metrics for each sensor process) and sends them over HTTP to InfluxDB. Telegraf adds tags to each data point (hostname, scenario name, whether the sensor is installed) so you can filter and compare later.
+
+- **InfluxDB** is a time-series database that runs on the MON VM. It stores all the metrics Telegraf sends, indexed by time. It keeps everything in a single "bucket" called `telegraf` and makes it queryable via the Flux query language.
+
+- **Grafana** is a visualization tool that also runs on the MON VM. It connects to InfluxDB and displays the metrics as interactive dashboards with real-time graphs. You can select which VMs to display, filter by test scenario, zoom into time ranges, and compare metrics side-by-side.
+
+### How the testing works
+
+You set up multiple Windows VMs -- some with the sensor installed, some without. All VMs run Telegraf to report their metrics to a central monitoring server. You then run identical workloads (file operations, registry writes, network traffic, etc.) on VMs with and without the sensor, and compare the metrics in Grafana to measure the sensor's overhead.
+
+### Source code
+
+All setup scripts, configuration files, test scenarios, and dashboards are in the GitHub repository:
+
+**https://github.com/cr-OmerMunchik/sensor-perf-testing**
+
+Clone it to your workstation before starting:
+
+```powershell
+git clone https://github.com/cr-OmerMunchik/sensor-perf-testing.git
+cd sensor-perf-testing
+```
+
+All file paths in this guide are relative to this cloned repo directory.
+
+### What you'll need
+
+- Access to VMware web API to create VMs from the DevOps template
+- SSH client on your workstation (built into Windows 10/11)
+- A web browser to access Grafana and InfluxDB UIs
+- The ActiveProbe sensor installer (for VMs that need the sensor)
+
+### The environment
+
 The environment consists of:
 - **1 MON VM** (Small: 2 CPU / 4 GB) -- runs InfluxDB and Grafana
 - **2-4 Test VMs** (Large: 8 CPU / 16 GB) -- run Telegraf + test scenarios
@@ -63,9 +116,10 @@ This generates an SSH key (if you don't have one), copies it to all VMs, and tes
 
 ### 4.1 Copy setup files
 
-From your workstation:
+From your workstation, in the cloned `sensor-perf-testing` repo directory:
 
 ```powershell
+cd sensor-perf-testing
 scp -r setup-mon admin@172.46.16.24:C:\setup-mon
 scp -r dashboards admin@172.46.16.24:C:\setup-mon\dashboards
 ```
@@ -140,9 +194,10 @@ Open `http://<MON_VM_IP>:3000` in a browser.
 
 ### 5.1 Copy setup files
 
-From your workstation, copy to each test VM:
+From your workstation, in the cloned `sensor-perf-testing` repo directory, copy `setup-telegraf/` to each test VM:
 
 ```powershell
+cd sensor-perf-testing
 scp -r setup-telegraf admin@172.46.16.37:C:\setup-telegraf
 scp -r setup-telegraf admin@172.46.17.49:C:\setup-telegraf
 scp -r setup-telegraf admin@172.46.16.176:C:\setup-telegraf
@@ -203,9 +258,10 @@ You should see lines with metrics for processes like `ActiveConsole`, `minionhos
 
 ## Step 7: Deploy Test Scenarios
 
-Copy the test scenarios to VM3 and VM4:
+From your workstation, in the cloned `sensor-perf-testing` repo directory, copy `test-scenarios/` to the VMs that will run workloads:
 
 ```powershell
+cd sensor-perf-testing
 scp -r test-scenarios admin@172.46.16.176:C:\test-scenarios
 scp -r test-scenarios admin@172.46.21.24:C:\test-scenarios
 ```

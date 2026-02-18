@@ -1,6 +1,31 @@
 <h1>Grafana Usage Guide &mdash; Sensor Performance Testing</h1>
 <p>How to use Grafana to monitor, compare, and analyze sensor performance metrics.</p>
 
+<h2>Overview</h2>
+
+<h3>What is Grafana?</h3>
+<p>Grafana is an open-source data visualization and monitoring tool. In our setup, it connects to InfluxDB (our time-series database) and displays performance metrics as interactive graphs and dashboards. Think of it as a real-time window into what&rsquo;s happening on your test VMs.</p>
+
+<h3>How it fits into the architecture</h3>
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">text</ac:parameter><ac:plain-text-body><![CDATA[Test VMs (Telegraf) --> InfluxDB (stores data) --> Grafana (shows graphs)]]></ac:plain-text-body></ac:structured-macro>
+<p><strong>Telegraf</strong> on each test VM collects Windows Performance Counters every 10 seconds (CPU, memory, disk, network, plus per-process metrics for each sensor process) and sends them to <strong>InfluxDB</strong> on the MON VM. <strong>Grafana</strong> queries InfluxDB and renders the data as time-series graphs.</p>
+<p>Each data point sent by Telegraf is tagged with:</p>
+<ul>
+<li><strong>host</strong> &mdash; which VM it came from (e.g., <code>TEST-PERF-1</code>)</li>
+<li><strong>scenario</strong> &mdash; which test was running (e.g., <code>file_stress_loop</code>, <code>idle_baseline</code>)</li>
+<li><strong>sensor_installed</strong> &mdash; whether the sensor is on this VM (<code>yes</code> / <code>no</code>)</li>
+</ul>
+<p>These tags are what allow you to filter, compare, and slice the data in Grafana&rsquo;s dashboard dropdowns.</p>
+
+<h3>What you can do with it</h3>
+<ul>
+<li><strong>Real-time monitoring</strong> &mdash; Watch CPU, memory, and I/O update live during a test</li>
+<li><strong>Host comparison</strong> &mdash; Select two VMs on the same graph to see sensor overhead</li>
+<li><strong>Scenario comparison</strong> &mdash; Filter by scenario to see how different workloads affect the sensor</li>
+<li><strong>Leak detection</strong> &mdash; Look for steadily growing memory or handle counts over long runs</li>
+<li><strong>KPI validation</strong> &mdash; Check metrics against release gate thresholds (e.g., CPU &lt; 2% idle, &lt; 15% under load)</li>
+</ul>
+
 <h2>Accessing Grafana</h2>
 <ul>
 <li><strong>URL</strong>: <code>http://&lt;MON_VM_IP&gt;:3000</code> (e.g., <code>http://172.46.16.24:3000</code>)</li>

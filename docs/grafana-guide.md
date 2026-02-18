@@ -2,6 +2,35 @@
 
 How to use Grafana to monitor, compare, and analyze sensor performance metrics.
 
+## Overview
+
+### What is Grafana?
+
+Grafana is an open-source data visualization and monitoring tool. In our setup, it connects to InfluxDB (our time-series database) and displays performance metrics as interactive graphs and dashboards. Think of it as a real-time window into what's happening on your test VMs.
+
+### How it fits into the architecture
+
+```
+Test VMs (Telegraf) --> InfluxDB (stores data) --> Grafana (shows graphs)
+```
+
+**Telegraf** on each test VM collects Windows Performance Counters every 10 seconds (CPU, memory, disk, network, plus per-process metrics for each sensor process) and sends them to **InfluxDB** on the MON VM. **Grafana** queries InfluxDB and renders the data as time-series graphs.
+
+Each data point sent by Telegraf is tagged with:
+- **host** -- which VM it came from (e.g., `TEST-PERF-1`)
+- **scenario** -- which test was running (e.g., `file_stress_loop`, `idle_baseline`)
+- **sensor_installed** -- whether the sensor is on this VM (`yes` / `no`)
+
+These tags are what allow you to filter, compare, and slice the data in Grafana's dashboard dropdowns.
+
+### What you can do with it
+
+- **Real-time monitoring** -- Watch CPU, memory, and I/O update live during a test
+- **Host comparison** -- Select two VMs on the same graph to see sensor overhead
+- **Scenario comparison** -- Filter by scenario to see how different workloads affect the sensor
+- **Leak detection** -- Look for steadily growing memory or handle counts over long runs
+- **KPI validation** -- Check metrics against release gate thresholds (e.g., CPU < 2% idle, < 15% under load)
+
 ## Accessing Grafana
 
 - **URL**: `http://<MON_VM_IP>:3000` (e.g., `http://172.46.16.24:3000`)

@@ -2,6 +2,35 @@
 
 How to execute test scenarios, monitor them in real-time, and review results.
 
+## Overview
+
+### What are the test scenarios?
+
+The test scenarios are PowerShell scripts that generate specific types of system activity -- file operations, registry writes, network traffic, process spawning, etc. These are the kinds of events that the ActiveProbe sensor monitors and reacts to. By running these workloads on VMs with and without the sensor, you can measure exactly how much overhead the sensor adds.
+
+### How scenarios work with the monitoring stack
+
+Each scenario script:
+1. **Tags the metrics** -- Calls `Switch-Scenario.ps1` which updates the `scenario` tag in Telegraf's configuration and restarts the service. From that point on, all metrics collected by Telegraf on that VM are tagged with the scenario name (e.g., `file_stress_loop`).
+2. **Runs the workload** -- Performs the actual system activity (creating files, writing registry keys, spawning processes, etc.)
+3. **Saves results** -- Writes timing and metadata to a JSON file at `C:\PerfTest\results\` for offline analysis.
+
+While the scenario runs, Telegraf continues collecting metrics every 10 seconds and sending them to InfluxDB. You can watch the impact in real-time in Grafana, or review it later by filtering on the scenario tag.
+
+### Where to get the scripts
+
+All test scenario scripts are in the `test-scenarios/` folder of the GitHub repository:
+
+**https://github.com/cr-OmerMunchik/sensor-perf-testing**
+
+Clone the repo and copy the `test-scenarios/` folder to the VMs that will run workloads:
+
+```powershell
+git clone https://github.com/cr-OmerMunchik/sensor-perf-testing.git
+cd sensor-perf-testing
+scp -r test-scenarios admin@<VM_IP>:C:\test-scenarios
+```
+
 ## VM Roles Recap
 
 | VM | Sensor | Scenarios | Purpose |
@@ -32,10 +61,10 @@ Open Grafana and confirm you see data from all VMs in the Host dropdown.
 
 ## Deploying Scenarios to VMs
 
-Copy the `test-scenarios/` folder to the VMs that will run workloads:
+From your workstation, in the cloned `sensor-perf-testing` repo directory, copy `test-scenarios/` to the VMs that will run workloads:
 
 ```powershell
-# From your workstation
+cd sensor-perf-testing
 scp -r test-scenarios admin@172.46.16.176:C:\test-scenarios   # VM3 (sensor + scenarios)
 scp -r test-scenarios admin@172.46.21.24:C:\test-scenarios     # VM4 (no sensor + scenarios)
 ```

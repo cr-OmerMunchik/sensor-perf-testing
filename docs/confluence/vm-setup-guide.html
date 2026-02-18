@@ -2,6 +2,48 @@
 <p>Complete step-by-step guide for setting up the performance testing environment from scratch.</p>
 
 <h2>Overview</h2>
+
+<h3>What is this?</h3>
+<p>This guide walks you through setting up an automated performance monitoring environment for the <strong>ActiveProbe (Cybereason) Windows Sensor</strong>. The goal is to measure exactly how much CPU, memory, disk I/O, and other resources the sensor consumes &mdash; both when idle and under various workloads &mdash; so we can ensure it stays within acceptable performance limits.</p>
+
+<h3>Architecture: The TIG Stack</h3>
+<p>The monitoring infrastructure is based on the <strong>TIG Stack</strong> &mdash; three open-source tools that work together:</p>
+
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">text</ac:parameter><ac:plain-text-body><![CDATA[+------------------+       +------------------+       +------------------+
+|   Test VMs       |       |   MON VM         |       |   Your Browser   |
+|                  |       |                  |       |                  |
+|  Telegraf        | ----> |  InfluxDB        | ----> |  Grafana         |
+|  (data collector)|  HTTP |  (time-series DB)|  query|  (dashboards)    |
++------------------+       +------------------+       +------------------+
+    collects metrics           stores metrics           visualizes metrics
+    every 10 seconds           with timestamps          graphs, comparisons]]></ac:plain-text-body></ac:structured-macro>
+
+<ul>
+<li><strong>Telegraf</strong> is a lightweight agent that runs on each test VM. It reads Windows Performance Counters every 10 seconds (CPU usage, memory, disk I/O, network, plus per-process metrics for each sensor process) and sends them over HTTP to InfluxDB. Telegraf adds tags to each data point (hostname, scenario name, whether the sensor is installed) so you can filter and compare later.</li>
+<li><strong>InfluxDB</strong> is a time-series database that runs on the MON VM. It stores all the metrics Telegraf sends, indexed by time. It keeps everything in a single &ldquo;bucket&rdquo; called <code>telegraf</code> and makes it queryable via the Flux query language.</li>
+<li><strong>Grafana</strong> is a visualization tool that also runs on the MON VM. It connects to InfluxDB and displays the metrics as interactive dashboards with real-time graphs. You can select which VMs to display, filter by test scenario, zoom into time ranges, and compare metrics side-by-side.</li>
+</ul>
+
+<h3>How the testing works</h3>
+<p>You set up multiple Windows VMs &mdash; some with the sensor installed, some without. All VMs run Telegraf to report their metrics to a central monitoring server. You then run identical workloads (file operations, registry writes, network traffic, etc.) on VMs with and without the sensor, and compare the metrics in Grafana to measure the sensor&rsquo;s overhead.</p>
+
+<h3>Source code</h3>
+<p>All setup scripts, configuration files, test scenarios, and dashboards are in the GitHub repository:</p>
+<p><strong><a href="https://github.com/cr-OmerMunchik/sensor-perf-testing">https://github.com/cr-OmerMunchik/sensor-perf-testing</a></strong></p>
+<p>Clone it to your workstation before starting:</p>
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">powershell</ac:parameter><ac:plain-text-body><![CDATA[git clone https://github.com/cr-OmerMunchik/sensor-perf-testing.git
+cd sensor-perf-testing]]></ac:plain-text-body></ac:structured-macro>
+<p>All file paths in this guide are relative to this cloned repo directory.</p>
+
+<h3>What you&rsquo;ll need</h3>
+<ul>
+<li>Access to VMware web API to create VMs from the DevOps template</li>
+<li>SSH client on your workstation (built into Windows 10/11)</li>
+<li>A web browser to access Grafana and InfluxDB UIs</li>
+<li>The ActiveProbe sensor installer (for VMs that need the sensor)</li>
+</ul>
+
+<h3>The environment</h3>
 <p>The environment consists of:</p>
 <ul>
 <li><strong>1 MON VM</strong> (Small: 2 CPU / 4 GB) &mdash; runs InfluxDB and Grafana</li>
@@ -43,7 +85,9 @@ New-NetFirewallRule -Name "OpenSSH-Server" -DisplayName "OpenSSH Server (sshd)" 
 <h2>Step 4: Set Up the MON VM</h2>
 
 <h3>4.1 Copy setup files</h3>
-<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">powershell</ac:parameter><ac:plain-text-body><![CDATA[scp -r setup-mon admin@172.46.16.24:C:\setup-mon
+<p>From your workstation, in the cloned <code>sensor-perf-testing</code> repo directory:</p>
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">powershell</ac:parameter><ac:plain-text-body><![CDATA[cd sensor-perf-testing
+scp -r setup-mon admin@172.46.16.24:C:\setup-mon
 scp -r dashboards admin@172.46.16.24:C:\setup-mon\dashboards]]></ac:plain-text-body></ac:structured-macro>
 
 <h3>4.2 Run the setup script</h3>
@@ -98,7 +142,7 @@ powershell -ExecutionPolicy Bypass -File Setup-MonVM.ps1]]></ac:plain-text-body>
 </ol>
 
 <h2>Step 5: Deploy Telegraf to Test VMs</h2>
-<p>Copy <code>setup-telegraf/</code> to each test VM and run with the appropriate parameters:</p>
+<p>From the cloned repo directory, copy <code>setup-telegraf/</code> to each test VM and run with the appropriate parameters:</p>
 <ac:structured-macro ac:name="code"><ac:parameter ac:name="language">powershell</ac:parameter><ac:plain-text-body><![CDATA[# No sensor VM:
 powershell -ExecutionPolicy Bypass -File Install-Telegraf.ps1 -MonVmIp "172.46.16.24" -InfluxToken "YOUR_TOKEN" -SensorInstalled "no"
 
@@ -110,8 +154,9 @@ powershell -ExecutionPolicy Bypass -File Install-Telegraf.ps1 -MonVmIp "172.46.1
 <p>Install the sensor on the designated VMs (test_perf_2 and test_perf_3) using your standard sensor installation procedure.</p>
 
 <h2>Step 7: Deploy Test Scenarios</h2>
-<p>Copy <code>test-scenarios/</code> to the VMs that will run workloads:</p>
-<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">powershell</ac:parameter><ac:plain-text-body><![CDATA[scp -r test-scenarios admin@172.46.16.176:C:\test-scenarios
+<p>From the cloned repo directory, copy <code>test-scenarios/</code> to the VMs that will run workloads:</p>
+<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">powershell</ac:parameter><ac:plain-text-body><![CDATA[cd sensor-perf-testing
+scp -r test-scenarios admin@172.46.16.176:C:\test-scenarios
 scp -r test-scenarios admin@172.46.21.24:C:\test-scenarios]]></ac:plain-text-body></ac:structured-macro>
 
 <h2>Verification Checklist</h2>
