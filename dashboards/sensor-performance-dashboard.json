@@ -303,7 +303,7 @@
         },
         {
           "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
-          "query": "import \"array\"\narray.from(rows: [\n  {host: \"TEST-PERF-1\", Role: \"Baseline (No Sensor)\"},\n  {host: \"TEST-PERF-2\", Role: \"Sensor - Idle\"},\n  {host: \"TEST-PERF-3\", Role: \"Sensor - Under Load\"},\n  {host: \"TEST-PERF-4\", Role: \"No Sensor - Under Load\"}\n])",
+          "query": "import \"array\"\narray.from(rows: [\n  {host: \"TEST-PERF-2\", Role: \"Sensor - Idle\"},\n  {host: \"TEST-PERF-3\", Role: \"Sensor - Under Load\"}\n])",
           "refId": "F"
         }
       ]
