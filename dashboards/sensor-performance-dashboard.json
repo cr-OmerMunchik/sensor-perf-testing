@@ -254,6 +254,14 @@
               { "id": "decimals", "value": 0 },
               { "id": "custom.cellOptions", "value": { "type": "auto" } }
             ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Role" },
+            "properties": [
+              { "id": "custom.width", "value": 200 },
+              { "id": "custom.align", "value": "left" },
+              { "id": "custom.cellOptions", "value": { "type": "auto" } }
+            ]
           }
         ]
       },
@@ -264,7 +272,8 @@
       "type": "table",
       "options": { "showHeader": true, "cellHeight": "md", "footer": { "show": false }, "sortBy": [{ "displayName": "host" }] },
       "transformations": [
-        { "id": "merge", "options": {} }
+        { "id": "merge", "options": {} },
+        { "id": "organize", "options": { "indexByName": { "host": 0, "Role": 1, "Avg CPU %": 2, "Peak CPU %": 3, "Avg Mem MB": 4, "Peak Mem MB": 5, "Avg Handles": 6 } } }
       ],
       "targets": [
         {
@@ -291,6 +300,11 @@
           "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
           "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"sensor_process\" and r._field == \"Handle_Count\")\n  |> filter(fn: (r) => r.host =~ /${host:regex}/)\n  |> filter(fn: (r) => r.scenario =~ /${scenario:regex}/)\n  |> group(columns: [\"host\"])\n  |> mean()\n  |> group()\n  |> keep(columns: [\"host\", \"_value\"])\n  |> rename(columns: {_value: \"Avg Handles\"})",
           "refId": "E"
+        },
+        {
+          "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+          "query": "import \"array\"\narray.from(rows: [\n  {host: \"TEST-PERF-1\", Role: \"Baseline (No Sensor)\"},\n  {host: \"TEST-PERF-2\", Role: \"Sensor \\u2013 Idle\"},\n  {host: \"TEST-PERF-3\", Role: \"Sensor \\u2013 Under Load\"},\n  {host: \"TEST-PERF-4\", Role: \"No Sensor \\u2013 Under Load\"}\n])",
+          "refId": "F"
         }
       ]
     },
@@ -369,6 +383,14 @@
               { "id": "decimals", "value": 0 },
               { "id": "custom.cellOptions", "value": { "type": "auto" } }
             ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Role" },
+            "properties": [
+              { "id": "custom.width", "value": 220 },
+              { "id": "custom.align", "value": "left" },
+              { "id": "custom.cellOptions", "value": { "type": "auto" } }
+            ]
           }
         ]
       },
@@ -379,7 +401,8 @@
       "type": "table",
       "options": { "showHeader": true, "cellHeight": "md", "footer": { "show": false }, "sortBy": [{ "displayName": "host" }] },
       "transformations": [
-        { "id": "merge", "options": {} }
+        { "id": "merge", "options": {} },
+        { "id": "organize", "options": { "indexByName": { "host": 0, "Role": 1, "Avg CPU %": 2, "Peak CPU %": 3, "Avail Mem MB": 4, "Min Avail MB": 5, "Avg Disk IOPS": 6 } } }
       ],
       "targets": [
         {
@@ -406,6 +429,11 @@
           "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
           "query": "from(bucket: \"telegraf\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"win_disk\")\n  |> filter(fn: (r) => r._field == \"Disk_Reads_persec\" or r._field == \"Disk_Writes_persec\")\n  |> filter(fn: (r) => r.host =~ /${host:regex}/)\n  |> group(columns: [\"host\"])\n  |> mean()\n  |> group()\n  |> keep(columns: [\"host\", \"_value\"])\n  |> rename(columns: {_value: \"Avg Disk IOPS\"})",
           "refId": "E"
+        },
+        {
+          "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+          "query": "import \"array\"\narray.from(rows: [\n  {host: \"TEST-PERF-1\", Role: \"Baseline (No Sensor)\"},\n  {host: \"TEST-PERF-2\", Role: \"Sensor \\u2013 Idle\"},\n  {host: \"TEST-PERF-3\", Role: \"Sensor \\u2013 Under Load\"},\n  {host: \"TEST-PERF-4\", Role: \"No Sensor \\u2013 Under Load\"}\n])",
+          "refId": "F"
         }
       ]
     },
