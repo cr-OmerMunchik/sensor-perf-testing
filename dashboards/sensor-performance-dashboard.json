@@ -22,7 +22,7 @@
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
       "id": 500,
-      "title": "\u2b50 Sensor KPI Summary",
+      "title": "Sensor KPI Summary",
       "type": "row"
     },
     {
@@ -185,7 +185,7 @@
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
       "id": 510,
-      "title": "\ud83d\udd0d Sensor Process KPIs by Host",
+      "title": "Sensor Process KPIs by Host",
       "type": "row"
     },
     {
@@ -303,7 +303,7 @@
         },
         {
           "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
-          "query": "import \"array\"\narray.from(rows: [\n  {host: \"TEST-PERF-1\", Role: \"Baseline (No Sensor)\"},\n  {host: \"TEST-PERF-2\", Role: \"Sensor \\u2013 Idle\"},\n  {host: \"TEST-PERF-3\", Role: \"Sensor \\u2013 Under Load\"},\n  {host: \"TEST-PERF-4\", Role: \"No Sensor \\u2013 Under Load\"}\n])",
+          "query": "import \"array\"\narray.from(rows: [\n  {host: \"TEST-PERF-1\", Role: \"Baseline (No Sensor)\"},\n  {host: \"TEST-PERF-2\", Role: \"Sensor - Idle\"},\n  {host: \"TEST-PERF-3\", Role: \"Sensor - Under Load\"},\n  {host: \"TEST-PERF-4\", Role: \"No Sensor - Under Load\"}\n])",
           "refId": "F"
         }
       ]
@@ -312,7 +312,7 @@
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 12 },
       "id": 520,
-      "title": "\ud83d\udcca System Impact -- All VMs (Sensor vs No Sensor)",
+      "title": "System Impact -- All VMs (Sensor vs No Sensor)",
       "type": "row"
     },
     {
@@ -432,7 +432,7 @@
         },
         {
           "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
-          "query": "import \"array\"\narray.from(rows: [\n  {host: \"TEST-PERF-1\", Role: \"Baseline (No Sensor)\"},\n  {host: \"TEST-PERF-2\", Role: \"Sensor \\u2013 Idle\"},\n  {host: \"TEST-PERF-3\", Role: \"Sensor \\u2013 Under Load\"},\n  {host: \"TEST-PERF-4\", Role: \"No Sensor \\u2013 Under Load\"}\n])",
+          "query": "import \"array\"\narray.from(rows: [\n  {host: \"TEST-PERF-1\", Role: \"Baseline (No Sensor)\"},\n  {host: \"TEST-PERF-2\", Role: \"Sensor - Idle\"},\n  {host: \"TEST-PERF-3\", Role: \"Sensor - Under Load\"},\n  {host: \"TEST-PERF-4\", Role: \"No Sensor - Under Load\"}\n])",
           "refId": "F"
         }
       ]
