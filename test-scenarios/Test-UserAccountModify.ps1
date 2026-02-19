@@ -26,38 +26,49 @@ param(
 Start-Scenario -Name "user_account_modify" `
     -Description "User create/modify/delete ($Cycles cycles)"
 
+$savedEAP = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+
 $successCount = 0
+$errorCount = 0
 
 for ($i = 1; $i -le $Cycles; $i++) {
     $userName = "PerfTestUser_$i"
     Write-Host "  Cycle $i of $Cycles ($userName)..." -ForegroundColor Gray -NoNewline
 
     try {
-        # Cleanup from previous failed run
-        & net user $userName /delete 2>&1 | Out-Null
+        # Cleanup from previous failed run (ignore if user doesn't exist)
+        cmd /c "net user $userName /delete" 2>$null | Out-Null
 
         # Create user
-        & net user $userName "P@ssw0rd_Create_$i!" /add 2>&1 | Out-Null
+        cmd /c "net user $userName `"P@ssw0rd_Create_$i!`" /add" 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Failed to create user $userName (exit code $LASTEXITCODE)" }
 
         # Modify password
-        & net user $userName "P@ssw0rd_Modified_$i!" 2>&1 | Out-Null
+        cmd /c "net user $userName `"P@ssw0rd_Modified_$i!`" " 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Failed to modify user $userName (exit code $LASTEXITCODE)" }
 
         # Delete user
-        & net user $userName /delete 2>&1 | Out-Null
+        cmd /c "net user $userName /delete" 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Failed to delete user $userName (exit code $LASTEXITCODE)" }
 
         $successCount++
         Write-Host " OK" -ForegroundColor Green
     }
     catch {
+        $errorCount++
         Write-Host " ERROR: $_" -ForegroundColor Red
-        & net user $userName /delete 2>&1 | Out-Null
+        cmd /c "net user $userName /delete" 2>$null | Out-Null
     }
 
     Start-Sleep -Milliseconds 500
 }
 
+$ErrorActionPreference = $savedEAP
+
 Add-ScenarioMetric -Key "cycles" -Value $Cycles
 Add-ScenarioMetric -Key "success_count" -Value $successCount
+Add-ScenarioMetric -Key "error_count" -Value $errorCount
 Add-ScenarioMetric -Key "expected_events" -Value "USER_MODIFIED, PROCESS_CREATED, PROCESS_ENDED"
 Add-ScenarioMetric -Key "estimated_user_events" -Value ($Cycles * 3)
 
