@@ -82,23 +82,23 @@ This runs all 13 scenarios in sequence:
 
 | # | Scenario | Description | Est. Runtime |
 |---|----------|-------------|-------------|
-| 1 | idle_baseline | System at rest | 10 min |
-| 2 | file_stress_loop | File create/rename/delete loop | ~2 min |
-| 3 | registry_storm | Registry set/delete storm | ~2 min |
-| 4 | network_burst | HTTP request burst | ~2 min |
-| 5 | process_storm | Rapid process spawn/terminate | ~2 min |
-| 6 | rpc_generation | WMI/RPC query loop | ~2 min |
-| 7 | service_cycle | Service create/start/stop/delete | ~1 min |
-| 8 | user_account_modify | User account create/modify/delete | ~1 min |
-| 9 | browser_streaming | Browser streaming session | 5 min |
-| 10 | driver_load | Driver load via Defender restart | ~1 min |
-| 11 | zip_extraction | ZIP archive create/extract | ~3 min |
-| 12 | file_storm | Mass file operations in bursts | ~2 min |
-| 13 | combined_high_density | All generators in parallel | 7 min |
+| 1 | idle_baseline | System at rest | 15 min |
+| 2 | file_stress_loop | File create/rename/delete loop (5000 x 100) | ~14 min |
+| 3 | registry_storm | Registry set/delete storm (2000 x 100) | ~12 min |
+| 4 | network_burst | HTTP request burst (300 x 50) | ~15 min |
+| 5 | process_storm | Rapid process spawn/terminate (100 x 30) | ~13 min |
+| 6 | rpc_generation | WMI/RPC query loop (500 x 25) | ~15 min |
+| 7 | service_cycle | Service create/start/stop/delete (200 cycles) | ~7 min |
+| 8 | user_account_modify | User account create/modify/delete (200 cycles) | ~5 min |
+| 9 | browser_streaming | Browser streaming session | 15 min |
+| 10 | driver_load | Driver load via Defender restart (10 cycles) | ~3 min |
+| 11 | zip_extraction | ZIP archive create/extract (10000 x 10) | ~12 min |
+| 12 | file_storm | Mass file operations in bursts (10000 x 30) | ~12 min |
+| 13 | combined_high_density | All generators in parallel | 15 min |
 
 Between each scenario there is a **60-second pause** to create clean separation in Grafana graphs.
 
-**Total estimated runtime: ~50-60 minutes.**
+**Total estimated runtime: ~3-4 hours** (scenarios + pauses).
 
 ### Options
 
@@ -118,26 +118,26 @@ Between each scenario there is a **60-second pause** to create clean separation 
 You can run any scenario independently:
 
 ```powershell
-# File operations
-.\Test-FileStressLoop.ps1 -LoopCount 1000 -Iterations 3
-.\Test-FileStorm.ps1 -FileCount 5000 -Bursts 3
-.\Test-ZipExtraction.ps1 -FileCount 10000 -Iterations 3
+# File operations (~12-14 min each)
+.\Test-FileStressLoop.ps1 -LoopCount 5000 -Iterations 100
+.\Test-FileStorm.ps1 -FileCount 10000 -Bursts 30
+.\Test-ZipExtraction.ps1 -FileCount 10000 -Iterations 10
 
-# System events
-.\Test-RegistryStorm.ps1 -LoopCount 500 -Iterations 3
-.\Test-ProcessStorm.ps1 -ProcessCount 200 -Bursts 3
-.\Test-NetworkBurst.ps1 -RequestCount 200 -Iterations 3
-.\Test-RpcGeneration.ps1 -QueryCount 300 -Iterations 3
+# System events (~12-15 min each)
+.\Test-RegistryStorm.ps1 -LoopCount 2000 -Iterations 100
+.\Test-ProcessStorm.ps1 -ProcessCount 100 -Bursts 30
+.\Test-NetworkBurst.ps1 -RequestCount 300 -Iterations 50
+.\Test-RpcGeneration.ps1 -QueryCount 500 -Iterations 25
 
-# Admin-required scenarios
-.\Test-ServiceCycle.ps1 -Cycles 10
-.\Test-UserAccountModify.ps1 -Cycles 10
-.\Test-DriverLoad.ps1 -Cycles 3
+# Admin-required scenarios (~3-7 min each)
+.\Test-ServiceCycle.ps1 -Cycles 200
+.\Test-UserAccountModify.ps1 -Cycles 200
+.\Test-DriverLoad.ps1 -Cycles 10
 
-# Long-running scenarios
-.\Test-IdleBaseline.ps1 -DurationMinutes 60
-.\Test-BrowserStreaming.ps1 -DurationSeconds 300
-.\Test-CombinedHighDensity.ps1 -DurationSeconds 420
+# Long-running scenarios (15 min each)
+.\Test-IdleBaseline.ps1 -DurationMinutes 15
+.\Test-BrowserStreaming.ps1 -DurationSeconds 900
+.\Test-CombinedHighDensity.ps1 -DurationSeconds 900
 ```
 
 Each scenario automatically:

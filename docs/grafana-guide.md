@@ -1,285 +1,4 @@
-# # VM Setup Guide -- Sensor Performance Testing
-
-Complete step-by-step guide for setting up the performance testing environment from scratch.
-
-## Overview
-
-### What is this?
-
-This guide walks you through setting up an automated performance monitoring environment for the **ActiveProbe (Cybereason) Windows Sensor**. The goal is to measure exactly how much CPU, memory, disk I/O, and other resources the sensor consumes -- both when idle and under various workloads -- so we can ensure it stays within acceptable performance limits.
-
-### Architecture: The TIG Stack
-
-The monitoring infrastructure is based on the **TIG Stack** -- three open-source tools that work together:
-
-```
-+------------------+       +------------------+       +------------------+
-|   Test VMs       |       |   MON VM         |       |   Your Browser   |
-|                  |       |                  |       |                  |
-|  Telegraf        | ----> |  InfluxDB        | ----> |  Grafana         |
-|  (data collector)|  HTTP |  (time-series DB)|  query|  (dashboards)    |
-+------------------+       +------------------+       +------------------+
-    collects metrics           stores metrics           visualizes metrics
-    every 10 seconds           with timestamps          graphs, comparisons
-```
-
-- **Telegraf** is a lightweight agent that runs on each test VM. It reads Windows Performance Counters every 10 seconds (CPU usage, memory, disk I/O, network, plus per-process metrics for each sensor process) and sends them over HTTP to InfluxDB. Telegraf adds tags to each data point (hostname, scenario name, whether the sensor is installed) so you can filter and compare later.
-
-- **InfluxDB** is a time-series database that runs on the MON VM. It stores all the metrics Telegraf sends, indexed by time. It keeps everything in a single "bucket" called `telegraf` and makes it queryable via the Flux query language.
-
-- **Grafana** is a visualization tool that also runs on the MON VM. It connects to InfluxDB and displays the metrics as interactive dashboards with real-time graphs. You can select which VMs to display, filter by test scenario, zoom into time ranges, and compare metrics side-by-side.
-
-### How the testing works
-
-You set up multiple Windows VMs -- some with the sensor installed, some without. All VMs run Telegraf to report their metrics to a central monitoring server. You then run identical workloads (file operations, registry writes, network traffic, etc.) on VMs with and without the sensor, and compare the metrics in Grafana to measure the sensor's overhead.
-
-### Source code
-
-All setup scripts, configuration files, test scenarios, and dashboards are in the GitHub repository:
-
-**https://github.com/cr-OmerMunchik/sensor-perf-testing**
-
-Clone it to your workstation before starting:
-
-```powershell
-git clone https://github.com/cr-OmerMunchik/sensor-perf-testing.git
-cd sensor-perf-testing
-```
-
-All file paths in this guide are relative to this cloned repo directory.
-
-### What you'll need
-
-- Access to VMware web API to create VMs from the DevOps template
-- SSH client on your workstation (built into Windows 10/11)
-- A web browser to access Grafana and InfluxDB UIs
-- The ActiveProbe sensor installer (for VMs that need the sensor)
-
-### The environment
-
-The environment consists of:
-- **1 MON VM** (Small: 2 CPU / 4 GB) -- runs InfluxDB and Grafana
-- **2-4 Test VMs** (Large: 8 CPU / 16 GB) -- run Telegraf + test scenarios
-
-All VMs are Windows 11 Pro (Build 26200), created from a VMware template.
-
-## Step 1: Create VMs
-
-Create VMs from the DevOps-provided VMware template:
-
-| VM Name | Size | Purpose |
-|---------|------|---------|
-| test_perf_mon | Small (2 CPU / 4 GB) | Monitoring server |
-| test_perf_1 | Large (8 CPU / 16 GB) | No sensor (baseline) |
-| test_perf_2 | Large (8 CPU / 16 GB) | Sensor installed, idle |
-| test_perf_3 | Large (8 CPU / 16 GB) | Sensor + scenarios |
-| test_perf_4 | Large (8 CPU / 16 GB) | No sensor + scenarios |
-
-> **Why these roles?** Having VMs with and without the sensor, both idle and under load, lets you calculate the exact overhead the sensor adds in each condition.
-
-## Step 2: Enable SSH on All VMs
-
-Connect to each VM via VMware console or RDP and run:
-
-```powershell
-Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
-Start-Service sshd
-Set-Service -Name sshd -StartupType Automatic
-New-NetFirewallRule -Name "OpenSSH-Server" -DisplayName "OpenSSH Server (sshd)" -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 -ErrorAction SilentlyContinue
-```
-
-## Step 3: Set Up Password-less SSH
-
-On your workstation, edit `Setup-SSHKeys.ps1` and update the `$vms` array with your VM IPs:
-
-```powershell
-$vms = @(
-    "172.46.16.24",   # test_perf_mon
-    "172.46.16.37",   # test_perf_1
-    "172.46.17.49",   # test_perf_2
-    "172.46.16.176",  # test_perf_3
-    "172.46.21.24"    # test_perf_4
-)
-```
-
-Then run:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File Setup-SSHKeys.ps1
-```
-
-This generates an SSH key (if you don't have one), copies it to all VMs, and tests connectivity. You'll need to enter the password once per VM.
-
-> **Note**: The script uses `C:\ProgramData\ssh\administrators_authorized_keys` because Windows OpenSSH ignores per-user authorized_keys for admin accounts.
-
-## Step 4: Set Up the MON VM
-
-### 4.1 Copy setup files
-
-From your workstation, in the cloned `sensor-perf-testing` repo directory:
-
-```powershell
-cd sensor-perf-testing
-scp -r setup-mon admin@172.46.16.24:C:\setup-mon
-scp -r dashboards admin@172.46.16.24:C:\setup-mon\dashboards
-```
-
-### 4.2 Run the setup script
-
-SSH into the MON VM and run:
-
-```powershell
-ssh admin@172.46.16.24
-cd C:\setup-mon
-powershell -ExecutionPolicy Bypass -File Setup-MonVM.ps1
-```
-
-This installs InfluxDB (as a scheduled task) and Grafana (as a Windows service), and opens firewall ports 8086 and 3000.
-
-### 4.3 Configure InfluxDB
-
-Open `http://<MON_VM_IP>:8086` in a browser (from the MON VM or any machine with access).
-
-1. Complete the setup wizard:
-   - **Username**: `admin`
-   - **Password**: choose a strong password
-   - **Organization**: `activeprobe-perf`
-   - **Bucket**: `telegraf`
-2. On the completion screen, **copy the API token** and save it. You will not be able to see it again.
-3. Click **Configure Later**
-
-### 4.4 Create an additional API token (if needed)
-
-If you missed the initial token:
-
-1. Go to **Load Data** (left sidebar) > **API Tokens**
-2. Click **Generate API Token** > **All Access API Token**
-3. Name it `telegraf-writer`
-4. Copy and save the token
-
-### 4.5 Configure Grafana
-
-Open `http://<MON_VM_IP>:3000` in a browser.
-
-1. Log in with `admin` / `admin` (you'll be asked to change the password)
-2. Go to **Connections** > **Data Sources** > **Add data source**
-3. Select **InfluxDB**
-4. Configure:
-   - **Query Language**: change dropdown to **Flux** (this is critical -- the default is InfluxQL)
-   - **URL**: `http://localhost:8086`
-   - Scroll down to **InfluxDB Details**:
-     - **Organization**: `activeprobe-perf`
-     - **Token**: paste the API token from step 4.3
-     - **Default Bucket**: `telegraf`
-5. Click **Save & Test** -- should say "datasource is working"
-
-### 4.6 Import dashboards
-
-**Dashboard 1 -- General Windows Metrics:**
-
-1. Go to **Dashboards** > **New** > **Import** (or navigate to `http://<MON_VM_IP>:3000/dashboard/import`)
-2. Enter ID **22226** and click **Load**
-3. Select your InfluxDB data source from the dropdown
-4. Click **Import**
-
-**Dashboard 2 -- ActiveProbe Sensor Performance:**
-
-1. Go to **Dashboards** > **New** > **Import**
-2. Click **Upload dashboard JSON file**
-3. Select `sensor-performance-dashboard.json` (should be at `C:\setup-mon\dashboards\` on the MON VM)
-4. Select your InfluxDB data source
-5. Click **Import**
-
-## Step 5: Deploy Telegraf to Test VMs
-
-### 5.1 Copy setup files
-
-From your workstation, in the cloned `sensor-perf-testing` repo directory, copy `setup-telegraf/` to each test VM:
-
-```powershell
-cd sensor-perf-testing
-scp -r setup-telegraf admin@172.46.16.37:C:\setup-telegraf
-scp -r setup-telegraf admin@172.46.17.49:C:\setup-telegraf
-scp -r setup-telegraf admin@172.46.16.176:C:\setup-telegraf
-scp -r setup-telegraf admin@172.46.21.24:C:\setup-telegraf
-```
-
-### 5.2 Run the install script on each VM
-
-SSH into each VM and run with the appropriate parameters:
-
-**test_perf_1** (no sensor, baseline):
-```powershell
-cd C:\setup-telegraf
-powershell -ExecutionPolicy Bypass -File Install-Telegraf.ps1 -MonVmIp "172.46.16.24" -InfluxToken "YOUR_TOKEN" -SensorInstalled "no"
-```
-
-**test_perf_2** (sensor installed, idle):
-```powershell
-cd C:\setup-telegraf
-powershell -ExecutionPolicy Bypass -File Install-Telegraf.ps1 -MonVmIp "172.46.16.24" -InfluxToken "YOUR_TOKEN" -SensorInstalled "yes"
-```
-
-**test_perf_3** (sensor + scenarios):
-```powershell
-cd C:\setup-telegraf
-powershell -ExecutionPolicy Bypass -File Install-Telegraf.ps1 -MonVmIp "172.46.16.24" -InfluxToken "YOUR_TOKEN" -SensorInstalled "yes"
-```
-
-**test_perf_4** (no sensor + scenarios):
-```powershell
-cd C:\setup-telegraf
-powershell -ExecutionPolicy Bypass -File Install-Telegraf.ps1 -MonVmIp "172.46.16.24" -InfluxToken "YOUR_TOKEN" -SensorInstalled "no"
-```
-
-Replace `YOUR_TOKEN` with the actual InfluxDB API token from step 4.3.
-
-### 5.3 Verify data flow
-
-After installing Telegraf on all VMs:
-
-1. Open Grafana (`http://<MON_VM_IP>:3000`)
-2. Go to the **Telegraf Windows Metrics** dashboard
-3. Set the time range to **Last 15 minutes**
-4. You should see metrics from all connected VMs in the **Host** dropdown
-
-## Step 6: Install the ActiveProbe Sensor
-
-Install the sensor on the designated VMs (test_perf_2 and test_perf_3). Follow your standard sensor installation procedure.
-
-After installation, verify the sensor processes appear in Telegraf:
-
-```powershell
-# On the VM with the sensor
-& C:\InfluxData\telegraf\telegraf.exe --config C:\InfluxData\telegraf\telegraf.conf --test 2>&1 | Select-String "sensor_process"
-```
-
-You should see lines with metrics for processes like `ActiveConsole`, `minionhost`, `CrsSvc`, etc.
-
-## Step 7: Deploy Test Scenarios
-
-From your workstation, in the cloned `sensor-perf-testing` repo directory, copy `test-scenarios/` to the VMs that will run workloads:
-
-```powershell
-cd sensor-perf-testing
-scp -r test-scenarios admin@172.46.16.176:C:\test-scenarios
-scp -r test-scenarios admin@172.46.21.24:C:\test-scenarios
-```
-
-See [Running Tests](running-tests.md) for how to execute them.
-
-## Verification Checklist
-
-After completing all steps, verify:
-
-- [ ] All VMs are reachable via SSH without password
-- [ ] MON VM: InfluxDB is running (`Get-Process influxd` or `Get-ScheduledTask -TaskName "InfluxDB"`)
-- [ ] MON VM: Grafana is running (`Get-Service Grafana`)
-- [ ] MON VM: Grafana can query InfluxDB (data source shows "working")
-- [ ] Test VMs: Telegraf is running (`Get-Service telegraf`)
-- [ ] Grafana: All test VM hostnames appear in the Host dropdown
-- [ ] Sensor VMs: Sensor processes appear in the Sensor Performance dashboard
-
+# Grafana Usage Guide -- Sensor Performance Testing
 
 How to use Grafana to monitor, compare, and analyze sensor performance metrics.
 
@@ -298,65 +17,228 @@ Test VMs (Telegraf) --> InfluxDB (stores data) --> Grafana (shows graphs)
 **Telegraf** on each test VM collects Windows Performance Counters every 10 seconds (CPU, memory, disk, network, plus per-process metrics for each sensor process) and sends them to **InfluxDB** on the MON VM. **Grafana** queries InfluxDB and renders the data as time-series graphs.
 
 Each data point sent by Telegraf is tagged with:
-- **host** -- which VM it came from (e.g., `TEST-PERF-1`)
+- **host** -- which VM it came from (e.g., `TEST-PERF-3`)
 - **scenario** -- which test was running (e.g., `file_stress_loop`, `idle_baseline`)
 - **sensor_installed** -- whether the sensor is on this VM (`yes` / `no`)
 
 These tags are what allow you to filter, compare, and slice the data in Grafana's dashboard dropdowns.
 
-### What you can do with it
+### Where is the data stored?
 
-- **Real-time monitoring** -- Watch CPU, memory, and I/O update live during a test
-- **Host comparison** -- Select two VMs on the same graph to see sensor overhead
-- **Scenario comparison** -- Filter by scenario to see how different workloads affect the sensor
-- **Leak detection** -- Look for steadily growing memory or handle counts over long runs
-- **KPI validation** -- Check metrics against release gate thresholds (e.g., CPU < 2% idle, < 15% under load)
+All metrics are stored **automatically** in InfluxDB on the MON VM. You don't need to export or save anything manually. As long as Telegraf is running on a test VM and InfluxDB is running on the MON VM, every 10-second sample is recorded permanently. You can go back days, weeks, or months later and still see the data.
 
-## Accessing Grafana
+### Accessing Grafana
 
 - **URL**: `http://<MON_VM_IP>:3000` (e.g., `http://172.46.16.24:3000`)
-- **Login**: `admin` / (the password you set during setup)
+- **Admin login**: `admin` / (the password set during setup)
+- **Viewer login**: `viewer` / (the password set for read-only access)
 
-## Dashboards
+## Dashboard Overview
 
-You have two dashboards:
+The main dashboard is called **ActiveProbe Sensor Performance**. It has several sections, each showing different aspects of the system.
 
-### 1. Telegraf Windows Metrics (ID 22226)
+Here is what the full dashboard looks like with all VMs selected:
 
-General OS-level metrics for any Windows machine:
-- CPU usage (total and per-core)
-- Memory (available, committed, paged/nonpaged pool)
-- Disk I/O (reads/writes per second, queue length, latency)
-- Network (bytes/packets in/out, errors)
-- System overview (processes, threads, context switches)
+![Dashboard overview showing KPI summary panels and comparison tables](images/dashboard-overview.jpg)
 
-### 2. ActiveProbe Sensor Performance (Custom)
+The dashboard is organized into these sections from top to bottom:
 
-Purpose-built dashboard for sensor testing:
+### 1. Sensor KPI Summary (top row)
 
-| Panel | What It Shows | What to Look For |
-|-------|---------------|------------------|
-| Sensor Process CPU | CPU % per sensor process | Should be < 2% idle, < 15% under load |
-| Sensor Process Memory (Working Set) | Physical memory per process | Should be < 350 MB idle, < 500 MB peak |
-| Sensor Process Private Bytes | Committed memory per process | Steady growth = memory leak |
-| Sensor Process Handles | Handle count per process | Steady growth = handle leak |
-| Sensor Process Threads | Thread count per process | Unexpected growth = thread leak |
-| Sensor Process Disk I/O | Read/write bytes per second per process | Spikes during scenarios are OK |
-| System CPU with KPI Lines | Total CPU with threshold markers | Green < 2%, Yellow < 15%, Red > 15% |
-| System Memory | Available memory over time | Steady decrease = leak somewhere |
-| System Disk IOPS | Total disk operations per second | Sustained high = disk thrashing |
-| System Network | Bytes sent/received per second | Look for retry storms |
-| Kernel Pool Memory | Paged + nonpaged pool bytes | Growth can indicate driver leaks |
-| Page Faults/sec | Memory pressure indicator | High sustained = memory pressure |
-| Sensor Service Health | Running/stopped status per service | Should all be "4" (running) |
+Four colored panels showing aggregate sensor metrics at a glance:
 
-## Using the Dashboard Controls
+| Panel | What it shows | Color meaning |
+|-------|--------------|---------------|
+| **Avg Sensor CPU** | Average CPU usage across all sensor processes | Green = good, Red = high |
+| **Peak Sensor CPU** | Maximum CPU spike seen | Green = good, Red = high |
+| **Avg Sensor Memory** | Average memory usage across sensor processes | Green = normal, Orange = elevated |
+| **Peak Sensor Memory** | Maximum memory seen | Green = normal, Orange = elevated |
+
+These panels include small sparkline graphs so you can see the trend over time even in the summary view.
+
+### 2. Sensor Process KPIs by Host
+
+A comparison table showing per-VM sensor metrics with color-coded gauge bars:
+
+| Column | Description |
+|--------|-------------|
+| **host** | The VM hostname |
+| **Role** | Human-readable label (e.g., "Sensor - Idle", "Sensor - Under Load") |
+| **Avg CPU %** | Average CPU across all sensor processes |
+| **Peak CPU %** | Maximum CPU spike |
+| **Avg Mem MB** | Average memory in MB |
+| **Peak Mem MB** | Maximum memory in MB |
+| **Avg Handles** | Average handle count (watch for growth = leak) |
+
+Only VMs with the sensor installed appear here (TEST-PERF-2 and TEST-PERF-3).
+
+### 3. System Impact -- All VMs (Sensor vs No Sensor)
+
+A system-wide comparison table that includes **all VMs** -- both with and without the sensor:
+
+| Column | Description |
+|--------|-------------|
+| **host** | The VM hostname |
+| **Role** | Label like "Baseline (No Sensor)", "Sensor - Under Load", etc. |
+| **Avg CPU %** | System-wide average CPU |
+| **Peak CPU %** | System-wide peak CPU (with gauge bar) |
+| **Avail Mem MB** | Average available memory |
+| **Min Avail MB** | Lowest available memory seen |
+| **Avg Disk IOPS** | Average disk I/O operations per second |
+
+This is where you directly compare sensor vs. no-sensor overhead. For example, comparing TEST-PERF-3 (Sensor - Under Load) against TEST-PERF-4 (No Sensor - Under Load) tells you exactly how much CPU/memory the sensor adds.
+
+### 4. Sensor Process Metrics (time-series graphs)
+
+Detailed per-process graphs for each sensor component:
+
+![Sensor process metrics showing CPU, memory, handles, threads, and disk I/O per process](images/sensor-process-metrics.jpg)
+
+| Panel | What to look for |
+|-------|-----------------|
+| **Sensor Process CPU Usage** | Per-process CPU over time. Spikes during scenarios are expected; sustained high CPU is not. |
+| **Sensor Process Memory (Working Set)** | Physical memory per process. Should be stable. A steady upward trend = memory leak. |
+| **Sensor Process Private Bytes** | Committed memory. Same leak-detection logic as Working Set. |
+| **Sensor Process Handle Count** | Number of OS handles. A steady climb over hours = handle leak. |
+| **Sensor Process Thread Count** | Number of threads. Should be relatively flat. |
+| **Sensor Process Disk I/O** | Read/write bytes per second. Spikes during file-heavy scenarios are normal. |
+
+### 5. System-Wide Metrics (time-series graphs)
+
+OS-level metrics for all selected VMs:
+
+![System-wide metrics showing CPU, memory, disk IOPS, network, and kernel pool](images/system-wide-metrics.jpg)
+
+| Panel | What to look for |
+|-------|-----------------|
+| **System CPU Usage (Total)** | Total CPU % for each VM. Compare lines to see sensor overhead. |
+| **System Available Memory** | Free RAM. Should stay stable; a downward trend means something is leaking. |
+| **System Disk IOPS** | Disk operations/sec. High sustained values = disk thrashing. |
+| **System Network Throughput** | Bytes in/out. Look for retry storms or unexpected traffic. |
+| **Kernel Pool Memory** | Paged + nonpaged pool. Growth can indicate driver-level leaks. |
+| **Page Faults/sec** | Memory pressure indicator. High sustained = the system is under memory pressure. |
+
+## How to View a Specific Test
+
+This is the most common task: you ran a test and want to see what happened.
+
+### Step 1: Set the time range
+
+Click the time picker in the top-right corner. You have two options:
+
+- **If the test just finished**: Select "Last 1 hour" or "Last 6 hours"
+- **If the test ran earlier**: Click the time picker and enter a custom absolute range. For example, if you ran `Run-AllScenarios.ps1` yesterday from 5pm to 10pm, set the range to `2026-02-18 17:00:00` to `2026-02-18 22:30:00`
+
+### Step 2: Select the VMs
+
+In the **Host** dropdown at the top of the dashboard, select the VMs you want to see. For a comparison:
+- Select **TEST-PERF-3** and **TEST-PERF-4** to compare sensor vs. no-sensor under load
+
+### Step 3: Filter by scenario (optional)
+
+In the **Scenario** dropdown, you can either:
+- Leave it as **All** to see all scenarios in the time range (you'll see the transitions between them as clear gaps in the graphs)
+- Select a specific scenario like `file_storm` to zoom into just that workload
+
+Here's what it looks like when you filter to a specific scenario (`file_storm`) and compare two VMs:
+
+![Filtering by the file_storm scenario showing TEST-PERF-3 vs TEST-PERF-2 comparison](images/scenario-filter-file-storm.jpg)
+
+Notice in this screenshot:
+- The **Scenario** dropdown is set to `file_storm` (highlighted with the red box)
+- The **Host** dropdown has two VMs selected
+- The time range is set to the exact period when that scenario ran
+- The **System CPU** graph shows two lines -- one per VM -- so you can visually see the difference
+- **System Disk IOPS** shows the file I/O activity pattern
+- **Network Throughput** is quiet (expected -- this is a file test, not a network test)
+
+### Step 4: Compare two VMs side-by-side
+
+For a direct comparison of sensor overhead during a specific test:
+
+![Dashboard comparison showing TEST-PERF-3 vs TEST-PERF-4 with KPI tables](images/dashboard-comparison.jpg)
+
+In this view:
+- **Sensor KPI Summary** panels show the sensor's average and peak CPU/memory during the selected period
+- **Sensor Process KPIs by Host** table breaks it down per VM
+- **System-Wide Metrics per Host** table shows ALL VMs including the no-sensor ones, so you can directly compare the CPU, memory, and IOPS between sensor and no-sensor VMs running the same workload
+
+### Step 5: Zoom into details
+
+- **Click and drag** on any time-series graph to zoom into a specific time window
+- **Click the back arrow** next to the time picker to zoom back out
+- **Hover** over any point on a graph to see the exact value and timestamp
+- **Click a panel title** > **View** (or press `V`) to see a single panel full-screen
+
+## Common Workflows
+
+### "How much overhead does the sensor add?"
+
+1. Select time range covering a test run
+2. Select both a sensor VM and a no-sensor VM in the **Host** dropdown
+3. Look at the **System-Wide Metrics per Host** table
+4. Compare the **Avg CPU %** column: the difference between the sensor and no-sensor VM is the overhead
+5. Do the same for **Avail Mem MB** (lower available = more consumed)
+
+### "Is the sensor leaking memory?"
+
+1. Select a long time range (e.g., 24 hours of soak testing)
+2. Select the sensor VM in the **Host** dropdown
+3. Scroll to the **Sensor Process Private Bytes** graph
+4. A steadily rising line (not just spikes) = memory leak
+5. Also check **Sensor Process Handle Count** -- rising handles are another leak signal
+
+### "Which scenario caused the highest CPU?"
+
+1. Set the time range to cover the full `Run-AllScenarios.ps1` run
+2. Leave **Scenario** as **All**
+3. Look at the **System CPU Usage (Total)** graph
+4. You'll see distinct blocks of activity separated by 60-second gaps (the pauses between scenarios)
+5. The tallest block is the most CPU-intensive scenario
+6. Click and drag to zoom into that block, then check the **Scenario** dropdown to confirm which one it was
+
+### "Show me results from a test I ran 3 days ago"
+
+All data is stored permanently in InfluxDB. Simply:
+1. Click the time picker
+2. Set an absolute time range covering the period you want (e.g., `2026-02-16 09:00` to `2026-02-16 18:00`)
+3. The dashboard shows exactly what happened during that period
+4. Use Scenario and Host dropdowns to filter as needed
+
+## Exporting Results
+
+### Share a link
+
+1. Click **Share** (top-right of the dashboard, next to the star icon)
+2. Choose **Link** -- this generates a URL with the current time range and filters embedded
+3. Send the link to your colleague -- they'll see the same view (they need Grafana access)
+
+### Export a panel as CSV
+
+1. Click a panel title
+2. Select **Inspect** > **Data**
+3. Click **Download CSV**
+4. This gives you the raw numbers behind the graph for use in Excel or other tools
+
+### Take a screenshot for a report
+
+1. Set up the dashboard with the desired time range, hosts, and scenario filter
+2. Use your OS screenshot tool (Win+Shift+S on Windows)
+3. For a cleaner look, press `V` on a panel to view it full-screen first
+
+### Export dashboard as PDF (via browser)
+
+1. Set up the desired view
+2. Use the browser's Print function (Ctrl+P)
+3. Save as PDF
+
+## Dashboard Controls Reference
 
 ### Time Range Picker (top-right)
 
 - **Real-time monitoring**: Select "Last 15 minutes" or "Last 1 hour" with auto-refresh ON
-- **Reviewing a past test**: Click and set a custom time range covering the test period
-- **Quick zoom**: Click and drag on any graph to zoom into a specific time window
+- **Reviewing a past test**: Set a custom absolute time range covering the test period
+- **Quick zoom**: Click and drag on any graph to zoom in
 - **Zoom out**: Click the back arrow next to the time picker
 
 ### Auto-Refresh (next to time picker)
@@ -366,72 +248,28 @@ Purpose-built dashboard for sensor testing:
 
 ### Template Variables (top of dashboard)
 
-These dropdowns filter what data is shown:
+| Dropdown | Purpose | Tips |
+|----------|---------|------|
+| **Host** | Select which VMs to display | Multi-select to compare side by side |
+| **Scenario** | Filter by test scenario tag | Use "All" to see transitions between tests |
+| **Sensor Installed** | Filter by yes/no | Useful to isolate sensor vs. baseline VMs |
 
-- **Host**: Select one or more VMs. Multi-select lets you compare side by side.
-- **Scenario**: Filter by test scenario tag (e.g., `idle_baseline`, `file_stress_loop`)
-- **Sensor Installed**: Filter by `yes` or `no`
+## Grafana Query Tips (Advanced)
 
-## Common Tasks
-
-### Compare sensor overhead (with vs. without)
-
-1. In the **Host** dropdown, select both a sensor VM and a no-sensor VM
-2. Both lines appear on the same graph with different colors
-3. The gap between the lines is the sensor overhead
-
-### Compare scenarios
-
-1. Run different scenarios at different times
-2. Set the time range to cover all scenarios
-3. Use the **Scenario** dropdown to filter one at a time
-4. Or view all scenarios together -- the gaps between them (from `Run-AllScenarios.ps1` pauses) make them easy to distinguish
-
-### Detect memory or handle leaks
-
-1. Open the **Sensor Process Private Bytes** or **Handle Count** panel
-2. Set the time range to a long period (e.g., a soak test)
-3. A steady upward trend (not just spikes) indicates a leak
-4. Click the panel title > **View** to see it full-screen for better detail
-
-### Check if KPIs pass
-
-1. Open the **System CPU with KPI Lines** panel
-2. The green/yellow/red threshold lines are drawn on the graph
-3. If the CPU line stays below the green threshold during idle, and below yellow under load, the KPI passes
-4. Cross-reference with the KPI table in the README
-
-### Export a graph as an image
-
-1. Hover over a panel and click the panel title
-2. Select **Share** (or click the share icon)
-3. Go to the **Snapshot** or **Direct link** tab
-4. Or simply take a screenshot for reports
-
-### Full-screen a panel
-
-1. Hover over a panel
-2. Click the panel title > **View** (or press `V`)
-3. Press `Esc` to return
-
-## Grafana Query Tips
-
-If you want to explore data beyond the pre-built dashboards:
-
-1. Go to **Explore** (compass icon in the left sidebar)
-2. Select the **InfluxDB** data source
-3. Write a Flux query. Examples:
+If you want to explore data beyond the pre-built dashboards, use the **Explore** view (compass icon in the left sidebar):
 
 **Get CPU usage for a specific host:**
+
 ```flux
 from(bucket: "telegraf")
   |> range(start: -1h)
   |> filter(fn: (r) => r._measurement == "win_cpu")
   |> filter(fn: (r) => r._field == "Percent_Processor_Time")
-  |> filter(fn: (r) => r.host == "DESKTOP-H57VD4J")
+  |> filter(fn: (r) => r.host == "TEST-PERF-3")
 ```
 
 **Get sensor process memory:**
+
 ```flux
 from(bucket: "telegraf")
   |> range(start: -1h)
@@ -441,12 +279,13 @@ from(bucket: "telegraf")
 ```
 
 **Compare two hosts:**
+
 ```flux
 from(bucket: "telegraf")
   |> range(start: -1h)
   |> filter(fn: (r) => r._measurement == "win_cpu")
   |> filter(fn: (r) => r._field == "Percent_Processor_Time")
-  |> filter(fn: (r) => r.host == "DESKTOP-H57VD4J" or r.host == "DESKTOP-ABC123")
+  |> filter(fn: (r) => r.host == "TEST-PERF-3" or r.host == "TEST-PERF-4")
 ```
 
 ## Alerts (Optional)
