@@ -15,7 +15,7 @@
     briefly before the next cycle. The scenario tag stays constant so
     Grafana shows clean, continuous graphs.
 
-.PARAMETER TotalHours
+.PARAMETER DurationHours
     Total soak test duration in hours. Default: 8.
 
 .PARAMETER CycleMinutes
@@ -31,17 +31,17 @@
     .\Run-SoakTest.ps1
 
     # Quick 2-hour soak test
-    .\Run-SoakTest.ps1 -TotalHours 2
+    .\Run-SoakTest.ps1 -DurationHours 2
 
-    # Detached 24-hour soak test (survives SSH disconnect)
-    .\Run-SoakTest.ps1 -TotalHours 24 -Detached
+    # Detached 48-hour (2-day) soak test (survives SSH disconnect)
+    .\Run-SoakTest.ps1 -DurationHours 48 -Detached
 
     # Shorter cycles for more frequent progress logging
-    .\Run-SoakTest.ps1 -TotalHours 8 -CycleMinutes 30
+    .\Run-SoakTest.ps1 -DurationHours 8 -CycleMinutes 30
 #>
 
 param(
-    [int]$TotalHours = 8,
+    [int]$DurationHours = 8,
     [int]$CycleMinutes = 60,
     [switch]$Detached
 )
@@ -58,7 +58,7 @@ if ($Detached) {
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host " Launching DETACHED Soak Test" -ForegroundColor Cyan
     Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "  Duration    : $TotalHours hours" -ForegroundColor White
+    Write-Host "  Duration    : $DurationHours hours" -ForegroundColor White
     Write-Host "  Cycle       : $CycleMinutes min each" -ForegroundColor White
     Write-Host "  Log file    : $logFile" -ForegroundColor White
     Write-Host "  PID file    : $logDir\soak.pid" -ForegroundColor White
@@ -67,7 +67,7 @@ if ($Detached) {
     $proc = Start-Process powershell -ArgumentList @(
         "-ExecutionPolicy", "Bypass",
         "-File", "$scriptDir\Run-SoakTest.ps1",
-        "-TotalHours", $TotalHours,
+        "-DurationHours", $DurationHours,
         "-CycleMinutes", $CycleMinutes
     ) -WindowStyle Hidden -PassThru -RedirectStandardOutput $logFile -RedirectStandardError "$logDir\soak_${timestamp}_err.log"
 
@@ -91,17 +91,17 @@ if ($Detached) {
 
 . "$scriptDir\ScenarioHelpers.ps1"
 
-$totalSeconds = $TotalHours * 3600
+$totalSeconds = $DurationHours * 3600
 $cycleSeconds = $CycleMinutes * 60
 $totalCycles = [math]::Ceiling($totalSeconds / $cycleSeconds)
 $suiteStart = Get-Date
-$suiteEnd = $suiteStart.AddHours($TotalHours)
+$suiteEnd = $suiteStart.AddHours($DurationHours)
 
 Start-Scenario -Name "soak_test" `
-    -Description "Sustained soak test ($TotalHours hours, $CycleMinutes-min cycles)"
+    -Description "Sustained soak test ($DurationHours hours, $CycleMinutes-min cycles)"
 
 Write-Host "Soak test plan:" -ForegroundColor Yellow
-Write-Host "  Total duration : $TotalHours hours" -ForegroundColor White
+Write-Host "  Total duration : $DurationHours hours" -ForegroundColor White
 Write-Host "  Cycle length   : $CycleMinutes minutes" -ForegroundColor White
 Write-Host "  Total cycles   : ~$totalCycles" -ForegroundColor White
 Write-Host "  End time       : $($suiteEnd.ToString('yyyy-MM-dd HH:mm:ss'))" -ForegroundColor White
@@ -181,11 +181,11 @@ while ((Get-Date) -lt $suiteEnd) {
     $cycleEndTime = (Get-Date).AddSeconds($thisCycleSeconds)
     while ((Get-Date) -lt $cycleEndTime) {
         $elapsed = ((Get-Date) - $suiteStart).TotalHours
-        $totalPct = [math]::Min(100, [math]::Round(($elapsed / $TotalHours) * 100))
+        $totalPct = [math]::Min(100, [math]::Round(($elapsed / $DurationHours) * 100))
         $cycleElapsed = ((Get-Date) - $cycleStart).TotalMinutes
         $cycleRemaining = [math]::Round(($thisCycleSeconds / 60) - $cycleElapsed, 1)
 
-        Write-Progress -Activity "Soak Test ($TotalHours hours)" `
+        Write-Progress -Activity "Soak Test ($DurationHours hours)" `
             -Status "Cycle $cycleNum | $cycleRemaining min left in cycle | $remainingHours hrs total remaining" `
             -PercentComplete $totalPct
 
