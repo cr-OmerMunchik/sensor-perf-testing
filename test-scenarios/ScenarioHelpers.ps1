@@ -4,9 +4,10 @@
 
 .DESCRIPTION
     Provides a standard interface for scenario execution:
-      - Start-Scenario  : Tags metrics, logs start time
-      - Write-ScenarioResult : Outputs results in a consistent format (console + JSON)
-      - Complete-Scenario : Logs end time, writes summary
+      - Start-Scenario    : Tags metrics, logs start time, optionally starts WPR trace
+      - Add-ScenarioMetric: Records a key-value metric
+      - Complete-Scenario : Logs end time, stops WPR trace, writes summary
+      - Enable-Profiling  : Enables WPR trace capture for the current session
 
     This module is designed for future LoginVSI integration:
       - Each scenario is a self-contained script with standard parameters
@@ -17,6 +18,27 @@
     Dot-source this file at the top of each scenario script:
       . "$PSScriptRoot\ScenarioHelpers.ps1"
 #>
+
+# ---------- Profiling state ----------
+$script:ProfilingEnabled = $false
+$script:ProfilingProfiles = @("GeneralProfile", "DiskIO")
+
+function Enable-Profiling {
+    param(
+        [string[]]$Profiles = @("GeneralProfile", "DiskIO")
+    )
+
+    $wpr = Get-Command wpr.exe -ErrorAction SilentlyContinue
+    if (-not $wpr) {
+        Write-Host "[WARN] wpr.exe not found - profiling disabled. Install Windows Performance Toolkit." -ForegroundColor Yellow
+        return
+    }
+
+    $script:ProfilingEnabled = $true
+    $script:ProfilingProfiles = $Profiles
+    New-Item -ItemType Directory -Path "C:\PerfTest\traces" -Force | Out-Null
+    Write-Host "[OK] WPR profiling enabled. Profiles: $($Profiles -join ', ')" -ForegroundColor Green
+}
 
 function Start-Scenario {
     param(
@@ -38,10 +60,35 @@ function Start-Scenario {
     # Brief settle time for Telegraf to pick up the new tag
     Start-Sleep -Seconds 3
 
+    # Start WPR trace if profiling is enabled
+    if ($script:ProfilingEnabled) {
+        $statusOutput = & wpr.exe -status 2>&1
+        if ($statusOutput -match "WPR is recording") {
+            Write-Host "[WARN] WPR already recording - cancelling previous trace." -ForegroundColor Yellow
+            & wpr.exe -cancel 2>&1 | Out-Null
+            Start-Sleep -Seconds 2
+        }
+
+        $profileArgs = @()
+        foreach ($p in $script:ProfilingProfiles) {
+            $profileArgs += "-start"
+            $profileArgs += $p
+        }
+        & wpr.exe @profileArgs
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "[OK] WPR trace started ($($script:ProfilingProfiles -join ', '))" -ForegroundColor Green
+        }
+        else {
+            Write-Host "[WARN] WPR failed to start (exit code: $LASTEXITCODE). Continuing without profiling." -ForegroundColor Yellow
+            $script:ProfilingEnabled = $false
+        }
+    }
+
     Write-Host "`n========================================" -ForegroundColor Cyan
     Write-Host " Scenario: $Name" -ForegroundColor Cyan
     if ($Description) { Write-Host " $Description" -ForegroundColor Gray }
     Write-Host " Host: $env:COMPUTERNAME" -ForegroundColor White
+    Write-Host " Profiling: $(if ($script:ProfilingEnabled) { 'ON' } else { 'OFF' })" -ForegroundColor White
     Write-Host " Started: $($script:ScenarioStart.ToString('yyyy-MM-dd HH:mm:ss'))" -ForegroundColor White
     Write-Host "========================================`n" -ForegroundColor Cyan
 }
@@ -60,11 +107,30 @@ function Complete-Scenario {
     $endTime = Get-Date
     $duration = ($endTime - $script:ScenarioStart).TotalSeconds
 
+    # Stop WPR trace if profiling was active
+    if ($script:ProfilingEnabled) {
+        $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+        $etlFile = "C:\PerfTest\traces\$($script:ScenarioName)_${env:COMPUTERNAME}_${timestamp}.etl"
+
+        Write-Host "Stopping WPR trace..." -ForegroundColor Cyan
+        & wpr.exe -stop $etlFile
+        if ($LASTEXITCODE -eq 0) {
+            $fileSize = [math]::Round((Get-Item $etlFile).Length / 1MB, 1)
+            Write-Host "[OK] Trace saved: $etlFile ($fileSize MB)" -ForegroundColor Green
+            Add-ScenarioMetric -Key "wpr_trace_file" -Value $etlFile
+            Add-ScenarioMetric -Key "wpr_trace_size_mb" -Value $fileSize
+        }
+        else {
+            Write-Host "[WARN] WPR failed to stop (exit code: $LASTEXITCODE)." -ForegroundColor Yellow
+        }
+    }
+
     Add-ScenarioMetric -Key "duration_seconds" -Value ([math]::Round($duration, 2))
     Add-ScenarioMetric -Key "host" -Value $env:COMPUTERNAME
     Add-ScenarioMetric -Key "scenario" -Value $script:ScenarioName
     Add-ScenarioMetric -Key "start_time" -Value $script:ScenarioStart.ToString('o')
     Add-ScenarioMetric -Key "end_time" -Value $endTime.ToString('o')
+    Add-ScenarioMetric -Key "profiling_enabled" -Value $script:ProfilingEnabled
 
     Write-Host "`n========================================" -ForegroundColor Green
     Write-Host " Scenario Complete: $($script:ScenarioName)" -ForegroundColor Green

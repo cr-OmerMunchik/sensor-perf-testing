@@ -28,6 +28,15 @@
 .PARAMETER OnlyScenarios
     If specified, only run these scenarios. E.g., @("file_stress_loop", "registry_storm")
 
+.PARAMETER EnableProfiling
+    If specified, captures a WPR trace for each scenario.
+    Traces are saved to C:\PerfTest\traces\ (~200-500 MB per scenario).
+
+.PARAMETER ProfilingProfiles
+    WPR profiles to capture when profiling is enabled.
+    Default: GeneralProfile, DiskIO
+    Available: CPU, DiskIO, FileIO, Heap, GeneralProfile, Network
+
 .EXAMPLE
     # Run all scenarios
     .\Run-AllScenarios.ps1
@@ -40,12 +49,20 @@
 
     # Run all except browser and driver (which may need special setup)
     .\Run-AllScenarios.ps1 -SkipScenarios @("browser_streaming", "driver_load")
+
+    # Run with WPR profiling enabled
+    .\Run-AllScenarios.ps1 -EnableProfiling -OnlyScenarios @("file_storm", "combined_high_density")
+
+    # Run with custom WPR profiles
+    .\Run-AllScenarios.ps1 -EnableProfiling -ProfilingProfiles @("CPU", "FileIO", "Heap")
 #>
 
 param(
     [int]$PauseBetweenSeconds = 60,
     [string[]]$SkipScenarios = @(),
-    [string[]]$OnlyScenarios = @()
+    [string[]]$OnlyScenarios = @(),
+    [switch]$EnableProfiling,
+    [string[]]$ProfilingProfiles = @("GeneralProfile", "DiskIO")
 )
 
 $ErrorActionPreference = "Stop"
@@ -147,8 +164,15 @@ foreach ($name in $AllScenarios.Keys) {
     $scenariosToRun[$name] = $AllScenarios[$name]
 }
 
-# ---------- Pre-flight ----------
+# ---------- Enable profiling if requested ----------
 $scriptDir = $PSScriptRoot
+. "$scriptDir\ScenarioHelpers.ps1"
+
+if ($EnableProfiling) {
+    Enable-Profiling -Profiles $ProfilingProfiles
+}
+
+# ---------- Pre-flight ----------
 $totalCount = $scenariosToRun.Count
 $estimatedMinutes = [math]::Round(($totalCount * 13 + $totalCount * $PauseBetweenSeconds / 60), 0)
 
@@ -160,6 +184,12 @@ Write-Host "  Scenarios         : $totalCount" -ForegroundColor White
 Write-Host "  Pause between     : ${PauseBetweenSeconds}s" -ForegroundColor White
 Write-Host "  Estimated runtime : ~${estimatedMinutes} minutes" -ForegroundColor White
 Write-Host "  Results dir       : C:\PerfTest\results\" -ForegroundColor White
+if ($EnableProfiling) {
+    $estTraceGB = [math]::Round($totalCount * 0.35, 1)
+    Write-Host "  Profiling         : ON ($($ProfilingProfiles -join ', '))" -ForegroundColor Yellow
+    Write-Host "  Traces dir        : C:\PerfTest\traces\" -ForegroundColor White
+    Write-Host "  Est. trace size   : ~${estTraceGB} GB total" -ForegroundColor White
+}
 Write-Host "========================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Scenarios to run:" -ForegroundColor Yellow
@@ -237,6 +267,10 @@ Write-Host "Next steps:" -ForegroundColor Yellow
 Write-Host "  1. Open Grafana and set the time range to cover this test run" -ForegroundColor White
 Write-Host "  2. Use the Scenario dropdown to compare metrics across scenarios" -ForegroundColor White
 Write-Host "  3. Compare this host with the baseline host (Host dropdown)" -ForegroundColor White
+if ($EnableProfiling) {
+    Write-Host "  4. Collect traces: .\Collect-Traces.ps1 (from your workstation)" -ForegroundColor White
+    Write-Host "  5. Open .etl files in WPA to analyze CPU/IO hotspots" -ForegroundColor White
+}
 Write-Host ""
 Write-Host "To aggregate all JSON results:" -ForegroundColor Yellow
 Write-Host "  Get-ChildItem C:\PerfTest\results\*.json | ForEach-Object { Get-Content `$_ | ConvertFrom-Json } | Format-Table scenario, duration_seconds" -ForegroundColor Gray
