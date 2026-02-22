@@ -171,6 +171,10 @@ $scriptDir = $PSScriptRoot
 if ($EnableProfiling) {
     Enable-Profiling -Profiles $ProfilingProfiles
 }
+else {
+    $env:PERF_TEST_PROFILING = "0"
+    Remove-Item Env:PERF_TEST_PROFILING_PROFILES -ErrorAction SilentlyContinue
+}
 
 # ---------- Pre-flight ----------
 $totalCount = $scenariosToRun.Count

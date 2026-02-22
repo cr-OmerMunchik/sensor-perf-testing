@@ -20,8 +20,16 @@
 #>
 
 # ---------- Profiling state ----------
-$script:ProfilingEnabled = $false
-$script:ProfilingProfiles = @("GeneralProfile", "DiskIO")
+# Uses env vars so child scenario scripts (invoked via &) inherit the state from Run-AllScenarios
+function Test-ProfilingEnabled {
+    return $env:PERF_TEST_PROFILING -eq "1"
+}
+function Get-ProfilingProfiles {
+    if ($env:PERF_TEST_PROFILING_PROFILES) {
+        return $env:PERF_TEST_PROFILING_PROFILES -split ","
+    }
+    return @("GeneralProfile", "DiskIO")
+}
 
 function Enable-Profiling {
     param(
@@ -34,8 +42,8 @@ function Enable-Profiling {
         return
     }
 
-    $script:ProfilingEnabled = $true
-    $script:ProfilingProfiles = $Profiles
+    $env:PERF_TEST_PROFILING = "1"
+    $env:PERF_TEST_PROFILING_PROFILES = $Profiles -join ","
     New-Item -ItemType Directory -Path "C:\PerfTest\traces" -Force | Out-Null
     Write-Host "[OK] WPR profiling enabled. Profiles: $($Profiles -join ', ')" -ForegroundColor Green
 }
@@ -60,8 +68,10 @@ function Start-Scenario {
     # Brief settle time for Telegraf to pick up the new tag
     Start-Sleep -Seconds 3
 
-    # Start WPR trace if profiling is enabled
-    if ($script:ProfilingEnabled) {
+    # Start WPR trace if profiling is enabled (env var set by Run-AllScenarios)
+    $profilingEnabled = Test-ProfilingEnabled
+    if ($profilingEnabled) {
+        $profiles = Get-ProfilingProfiles
         $statusOutput = & wpr.exe -status 2>&1
         if ($statusOutput -match "WPR is recording") {
             Write-Host "[WARN] WPR already recording - cancelling previous trace." -ForegroundColor Yellow
@@ -70,17 +80,17 @@ function Start-Scenario {
         }
 
         $profileArgs = @()
-        foreach ($p in $script:ProfilingProfiles) {
+        foreach ($p in $profiles) {
             $profileArgs += "-start"
             $profileArgs += $p
         }
         & wpr.exe @profileArgs
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "[OK] WPR trace started ($($script:ProfilingProfiles -join ', '))" -ForegroundColor Green
+            Write-Host "[OK] WPR trace started ($($profiles -join ', '))" -ForegroundColor Green
         }
         else {
             Write-Host "[WARN] WPR failed to start (exit code: $LASTEXITCODE). Continuing without profiling." -ForegroundColor Yellow
-            $script:ProfilingEnabled = $false
+            $env:PERF_TEST_PROFILING = "0"
         }
     }
 
@@ -88,7 +98,7 @@ function Start-Scenario {
     Write-Host " Scenario: $Name" -ForegroundColor Cyan
     if ($Description) { Write-Host " $Description" -ForegroundColor Gray }
     Write-Host " Host: $env:COMPUTERNAME" -ForegroundColor White
-    Write-Host " Profiling: $(if ($script:ProfilingEnabled) { 'ON' } else { 'OFF' })" -ForegroundColor White
+    Write-Host " Profiling: $(if (Test-ProfilingEnabled) { 'ON' } else { 'OFF' })" -ForegroundColor White
     Write-Host " Started: $($script:ScenarioStart.ToString('yyyy-MM-dd HH:mm:ss'))" -ForegroundColor White
     Write-Host "========================================`n" -ForegroundColor Cyan
 }
@@ -108,7 +118,8 @@ function Complete-Scenario {
     $duration = ($endTime - $script:ScenarioStart).TotalSeconds
 
     # Stop WPR trace if profiling was active
-    if ($script:ProfilingEnabled) {
+    $profilingEnabled = Test-ProfilingEnabled
+    if ($profilingEnabled) {
         $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
         $etlFile = "C:\PerfTest\traces\$($script:ScenarioName)_${env:COMPUTERNAME}_${timestamp}.etl"
 
@@ -130,7 +141,7 @@ function Complete-Scenario {
     Add-ScenarioMetric -Key "scenario" -Value $script:ScenarioName
     Add-ScenarioMetric -Key "start_time" -Value $script:ScenarioStart.ToString('o')
     Add-ScenarioMetric -Key "end_time" -Value $endTime.ToString('o')
-    Add-ScenarioMetric -Key "profiling_enabled" -Value $script:ProfilingEnabled
+    Add-ScenarioMetric -Key "profiling_enabled" -Value $profilingEnabled
 
     Write-Host "`n========================================" -ForegroundColor Green
     Write-Host " Scenario Complete: $($script:ScenarioName)" -ForegroundColor Green
