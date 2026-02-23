@@ -60,36 +60,40 @@ $totalFiles = 0
 foreach ($vm in $VMs) {
     Write-Host "--- $vm ---" -ForegroundColor Yellow
 
-    # List remote .etl files
-    $fileList = ssh "${SshUser}@${vm}" "powershell -Command `"Get-ChildItem '$RemoteDir\*.etl' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name`""
+    # List remote .etl files (use dir /b to avoid cmd.exe pipe interpretation with PowerShell)
+    $fileList = ssh "${SshUser}@${vm}" "cmd /c `"dir /b $RemoteDir\*.etl 2>nul`""
 
-    if (-not $fileList -or $fileList.Count -eq 0) {
+    if (-not $fileList) {
         Write-Host "  No .etl files found." -ForegroundColor Gray
         continue
     }
 
-    $files = @($fileList)
+    $files = @($fileList -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     Write-Host "  Found $($files.Count) trace file(s)" -ForegroundColor White
 
     foreach ($file in $files) {
         $file = $file.Trim()
         if (-not $file) { continue }
 
-        Write-Host "  Copying: $file" -ForegroundColor White -NoNewline
-        scp "${SshUser}@${vm}:${RemoteDir}\${file}" "$destDir\$file"
+        Write-Host "  Copying: $file ... " -ForegroundColor White -NoNewline
+        $remotePath = ($RemoteDir + "\" + $file) -replace '\\', '/'
+        $scpOutput = scp "${SshUser}@${vm}:${remotePath}" "$destDir\$file" 2>&1
 
         if ($LASTEXITCODE -eq 0) {
             $localSize = [math]::Round((Get-Item "$destDir\$file").Length / 1MB, 1)
-            Write-Host " ($localSize MB)" -ForegroundColor Green
+            Write-Host "OK ($localSize MB)" -ForegroundColor Green
             $totalFiles++
 
             if ($Cleanup) {
-                ssh "${SshUser}@${vm}" "powershell -Command `"Remove-Item '$RemoteDir\$file' -Force`""
+                $remotePathDel = "$RemoteDir\$file"
+                ssh "${SshUser}@${vm}" "cmd /c `"del /q `"$remotePathDel`"`"" 2>&1 | Out-Null
                 Write-Host "    Cleaned up remote file." -ForegroundColor Gray
             }
         }
         else {
-            Write-Host " [FAILED]" -ForegroundColor Red
+            Write-Host "FAILED" -ForegroundColor Red
+            if ($scpOutput) { Write-Host "    $scpOutput" -ForegroundColor Gray }
+            Write-Host "    Tip: If 'Permission denied', run PowerShell as Administrator or use a writable -LocalDir." -ForegroundColor Gray
         }
     }
 }
