@@ -44,7 +44,7 @@ $env:GRAFANA_API_KEY = "your-api-key"
 .\tools\Import-GrafanaDashboard.ps1
 ```
 
-Or with basic auth: `.\tools\Import-GrafanaDashboard.ps1 -BasicAuth "admin:password"`
+Or with basic auth: `.\tools\Import-GrafanaDashboard.ps1 -BasicAuth "admin:YOUR_PASSWORD"`
 
 ## Using the Dashboard
 

@@ -47,7 +47,7 @@ cd sensor-perf-testing
 ```
 
 All file paths in this guide are relative to this cloned repo directory.
-ma
+
 ### What you'll need
 
 - Access to VMware web API to create VMs from the DevOps template
@@ -108,14 +108,14 @@ Then run:
 powershell -ExecutionPolicy Bypass -File Setup-SSHKeys.ps1
 ```
 
-This generates an SSH key (if you don't have one), copies it to all VMs, and tests connectivity. You'll need to enter the password once per VM (default: **Password1**).
+This generates an SSH key (if you don't have one), copies it to all VMs, and tests connectivity. You'll need to enter the VM password once per VM when prompted.
 
 For automated deployment without prompts, install [PuTTY](https://www.putty.org/) (plink + pscp) and run:
 ```powershell
-.\Setup-SSHKeys.ps1 -Password Password1
+.\Setup-SSHKeys.ps1 -Password "YOUR_VM_PASSWORD"
 ```
 
-> **Note**: The script uses `C:\ProgramData\ssh\administrators_authorized_keys` because Windows OpenSSH ignores per-user authorized_keys for admin accounts. Default VM credentials: **admin / Password1**.
+> **Note**: The script uses `C:\ProgramData\ssh\administrators_authorized_keys` because Windows OpenSSH ignores per-user authorized_keys for admin accounts. Use the credentials from your VMware template (e.g., admin / your VM password).
 
 ## Step 4: Set Up the MON VM
 
@@ -166,7 +166,7 @@ If you missed the initial token:
 
 Open `http://<MON_VM_IP>:3000` in a browser.
 
-1. Log in with `admin` / `admin` (you'll be asked to change the password)
+1. Log in with the default Grafana credentials (typically `admin` / `admin`; you'll be asked to change the password)
 2. Go to **Connections** > **Data Sources** > **Add data source**
 3. Select **InfluxDB**
 4. Configure:
