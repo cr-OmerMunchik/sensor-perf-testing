@@ -20,8 +20,10 @@ Each data point sent by Telegraf is tagged with:
 - **host** -- which VM it came from (e.g., `TEST-PERF-3`)
 - **scenario** -- which test was running (e.g., `file_stress_loop`, `idle_baseline`)
 - **sensor_installed** -- whether the sensor is on this VM (`yes` / `no`)
+- **sensor_version** -- sensor version (e.g., `26.1.42`), or empty for no-sensor VMs
+- **num_cores** -- CPU cores for normalization (e.g., `8`); sensor CPU ÷ num_cores = % of total system
 
-These tags are what allow you to filter, compare, and slice the data in Grafana's dashboard dropdowns.
+These tags are what allow you to filter, compare, and slice the data in Grafana's dashboard dropdowns. The dashboard has **num_cores** and **sensor_version** variables; use `$__all` for sensor_version to include older data with empty sensor_version.
 
 ### Where is the data stored?
 

@@ -47,7 +47,7 @@ cd sensor-perf-testing
 ```
 
 All file paths in this guide are relative to this cloned repo directory.
-
+ma
 ### What you'll need
 
 - Access to VMware web API to create VMs from the DevOps template
@@ -108,9 +108,14 @@ Then run:
 powershell -ExecutionPolicy Bypass -File Setup-SSHKeys.ps1
 ```
 
-This generates an SSH key (if you don't have one), copies it to all VMs, and tests connectivity. You'll need to enter the password once per VM.
+This generates an SSH key (if you don't have one), copies it to all VMs, and tests connectivity. You'll need to enter the password once per VM (default: **Password1**).
 
-> **Note**: The script uses `C:\ProgramData\ssh\administrators_authorized_keys` because Windows OpenSSH ignores per-user authorized_keys for admin accounts.
+For automated deployment without prompts, install [PuTTY](https://www.putty.org/) (plink + pscp) and run:
+```powershell
+.\Setup-SSHKeys.ps1 -Password Password1
+```
+
+> **Note**: The script uses `C:\ProgramData\ssh\administrators_authorized_keys` because Windows OpenSSH ignores per-user authorized_keys for admin accounts. Default VM credentials: **admin / Password1**.
 
 ## Step 4: Set Up the MON VM
 

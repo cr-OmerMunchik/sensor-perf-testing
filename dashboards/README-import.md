@@ -34,6 +34,18 @@ This dashboard includes:
 - Page Faults/sec
 - Sensor Service Health Status (running/stopped indicator)
 
+## Re-import / Update Dashboard
+
+To push the latest dashboard (e.g. after fixes) to Grafana without using the UI:
+
+```powershell
+# Create a Grafana API key first: Configuration > API Keys > Add (Admin role)
+$env:GRAFANA_API_KEY = "your-api-key"
+.\tools\Import-GrafanaDashboard.ps1
+```
+
+Or with basic auth: `.\tools\Import-GrafanaDashboard.ps1 -BasicAuth "admin:password"`
+
 ## Using the Dashboard
 
 At the top of the dashboard, you will see dropdown variables:

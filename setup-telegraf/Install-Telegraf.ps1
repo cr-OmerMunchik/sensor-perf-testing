@@ -26,6 +26,9 @@
 .PARAMETER OsVersion
     The OS version tag (e.g., "win11_26200").
 
+.PARAMETER NumCores
+    Number of CPU cores for normalization (default: 8).
+
 .EXAMPLE
     # On BASELINE VM (no sensor):
     .\Install-Telegraf.ps1 -InfluxToken "your-token-here" -SensorInstalled "no"
@@ -47,7 +50,8 @@ param(
 
     [string]$SensorVersion = "",
     [string]$MachineProfile = "large_8vcpu_16gb",
-    [string]$OsVersion = "win11_26200"
+    [string]$OsVersion = "win11_26200",
+    [int]$NumCores = 8
 )
 
 $ErrorActionPreference = "Stop"
@@ -65,6 +69,7 @@ Write-Host "  Sensor Installed : $SensorInstalled" -ForegroundColor White
 Write-Host "  Sensor Version   : $(if ($SensorVersion) { $SensorVersion } else { '(none)' })" -ForegroundColor White
 Write-Host "  Machine Profile  : $MachineProfile" -ForegroundColor White
 Write-Host "  OS Version       : $OsVersion" -ForegroundColor White
+Write-Host "  Num Cores        : $NumCores" -ForegroundColor White
 
 # ---------- Step 1: Create directory ----------
 Write-Host "`n[1/5] Creating directory..." -ForegroundColor White
@@ -118,12 +123,47 @@ else {
     exit 1
 }
 
+# Auto-detect sensor version when SensorInstalled=yes and not provided
+if ($SensorInstalled -eq "yes" -and [string]::IsNullOrEmpty($SensorVersion)) {
+    $minionPath = "C:\Program Files\Cybereason ActiveProbe\minionhost.exe"
+    if (Test-Path $minionPath) {
+        try {
+            $ver = (Get-Item $minionPath).VersionInfo.FileVersion
+            if ($ver) {
+                $SensorVersion = $ver -replace '^(\d+\.\d+\.\d+).*', '$1'
+                Write-Host "  Auto-detected sensor version: $SensorVersion" -ForegroundColor Cyan
+            }
+        } catch { }
+    }
+    if ([string]::IsNullOrEmpty($SensorVersion)) {
+        try {
+            $uninstPaths = @(
+                "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+                "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+            )
+            foreach ($path in $uninstPaths) {
+                $items = Get-ChildItem $path -ErrorAction SilentlyContinue
+                foreach ($key in $items) {
+                    $p = Get-ItemProperty $key.PSPath -ErrorAction SilentlyContinue
+                    if ($p.DisplayName -match "Cybereason|ActiveProbe" -and $p.DisplayVersion) {
+                        $SensorVersion = $p.DisplayVersion -replace '^(\d+\.\d+\.\d+).*', '$1'
+                        Write-Host "  Auto-detected sensor version (registry): $SensorVersion" -ForegroundColor Cyan
+                        break
+                    }
+                }
+                if ($SensorVersion) { break }
+            }
+        } catch { }
+    }
+}
+
 $config = $config -replace 'MON_VM_IP', $MonVmIp
 $config = $config -replace 'INFLUXDB_TOKEN', $InfluxToken
 $config = $config -replace '  sensor_installed = "no"', "  sensor_installed = `"$SensorInstalled`""
 $config = $config -replace '  sensor_version = ""', "  sensor_version = `"$SensorVersion`""
 $config = $config -replace '  machine_profile = "large_8vcpu_16gb"', "  machine_profile = `"$MachineProfile`""
 $config = $config -replace '  os_version = "win11_26200"', "  os_version = `"$OsVersion`""
+$config = $config -replace '  num_cores = "8"', "  num_cores = `"$NumCores`""
 
 Set-Content -Path $confPath -Value $config -Encoding UTF8
 Write-Host "      Configuration written to $confPath" -ForegroundColor Gray

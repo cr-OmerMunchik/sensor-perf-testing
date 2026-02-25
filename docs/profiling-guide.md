@@ -170,60 +170,53 @@ Traces are organized by date: `C:\PerfTest\collected-traces\2026-02-22\*.etl`
 
 ---
 
-## Creating Jira Tickets
+## ETL Analyzer (Automated Analysis)
 
-For each major bottleneck found, create a Jira ticket with the following structure.
+The **ETL Analyzer** is a C# tool that processes `.etl` files and extracts top processes and functions by CPU. Use it when you want automated reports without opening WPA, or when integrating into CI pipelines.
 
-### Title format
+### When to use
 
-`[Perf] {Process}: {Brief description}`
+- **Automated reports** — `generate-perf-report.ps1` and `generate-executive-summary.ps1` use it internally
+- **Batch analysis** — Process many traces at once
+- **No GUI** — Run from the command line or scripts
 
-Examples:
-- `[Perf] minionhost: FileScanner::ScanPath consumes 35% CPU during file operations`
-- `[Perf] CrsSvc: Excessive registry polling in EventCollector::PollRegistryChanges`
-- `[Perf] ActiveConsole: Memory growth in PhoenixBlockedHashSyncClient during soak test`
+### Prerequisites
 
-### Description template
+- **.NET 8 SDK** — Required to build and run the tool
 
-```
-## Scenario
-- Test scenario: {e.g., file_storm}
-- VM: {e.g., test_perf_3}
-- Sensor version: {version}
+### Usage
 
-## Impact
-- {Quantified overhead, e.g., "This function accounts for 35% of minionhost.exe CPU during the file_storm scenario"}
-- {KPI impact, e.g., "Contributes to total sensor CPU exceeding the 15% under-load target (measured: 22%)"}
+From the `sensor-perf-testing` repo root:
 
-## Evidence
-- Grafana screenshot: {system-level CPU/memory during the scenario}
-- WPA flame graph: {screenshot showing the hot call stack}
+```powershell
+# Process traces (no symbols — faster, module+offset only)
+dotnet run --project tools/etl-analyzer -- "C:\PerfTest\collected-traces\2026-02-22"
 
-## Hot path
-{Call stack from WPA, e.g.:}
-minionhost.exe!FileScanner::ScanPath
-  minionhost.exe!FileScanner::ProcessFileEvent
-    minionhost.exe!EventDispatcher::Dispatch
-      ntdll.dll!NtQueryDirectoryFile
+# With symbols (readable function names like TrayKeepAliveTask::handler)
+dotnet run --project tools/etl-analyzer -- "C:\PerfTest\collected-traces\2026-02-22" --symbols
 
-## Suggested investigation
-- {Initial thoughts on why this is hot and potential optimization approaches}
+# Filter by scenario
+dotnet run --project tools/etl-analyzer -- "C:\path\to\traces" --scenario user_account_modify --symbols
 
-## Reproduction
-1. Deploy test scenario scripts to test_perf_3
-2. Run: .\Test-FileStorm.ps1 -FileCount 10000 -Bursts 30
-3. Capture WPR trace: .\Start-WprTrace.ps1 -Action Start / Stop
-4. Open .etl in WPA, filter to minionhost.exe > CPU Usage (Sampled)
+# Quick smoke test (limit to first 2 traces)
+dotnet run --project tools/etl-analyzer -- "C:\path\to\traces" --limit 2
 ```
 
-### Priority classification
+### Integration with reports
 
-| Priority | Criteria | Action |
-|----------|----------|--------|
-| P1 (Critical) | Function consumes >30% of a sensor process's CPU, or directly causes KPI failure | Fix in current sprint |
-| P2 (High) | Function consumes 10-30% of CPU, or measurable latency/memory impact | Schedule for next sprint |
-| P3 (Medium) | Function consumes 5-10% of CPU, optimization opportunity | Backlog, address when touching related code |
-| P4 (Low) | Minor inefficiency (<5% CPU), no user-visible impact | Backlog, address opportunistically |
+The ETL Analyzer is used by:
+
+- **`generate-perf-report.ps1`** — Full report: InfluxDB metrics + ETL hotspots merged into Markdown
+- **`generate-executive-summary.ps1`** — VP-ready one-pager for a single scenario
+
+See [tools/README.md](../tools/README.md) for the full report workflow.
+
+### Automated vs manual
+
+| Approach | Best for |
+|---------|----------|
+| **WPA** | Interactive exploration, flame graphs, disk I/O views, ad-hoc investigation |
+| **ETL Analyzer** | Automated reports, batch processing, CI, reproducible outputs |
 
 ---
 
@@ -253,4 +246,7 @@ setx _NT_SYMBOL_PATH "srv*C:\Symbols*\\172.25.1.155\symbols-releases;srv*C:\Symb
 
 # Open trace in WPA
 wpa.exe "C:\PerfTest\collected-traces\2026-02-22\file_storm_TEST-PERF-3_20260222_143000.etl"
+
+# ETL Analyzer (automated)
+dotnet run --project tools/etl-analyzer -- "C:\PerfTest\collected-traces\2026-02-22" --symbols
 ```

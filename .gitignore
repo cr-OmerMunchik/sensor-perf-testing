@@ -18,3 +18,23 @@ Desktop.ini
 *.swp
 *.swo
 *~
+
+# Backups
+*backup*.md
+*backup*.json
+*.backup-*
+
+# Generated reports and data
+executive-summary-*.md
+vp-presentation-slides.md
+perf-bottleneck-report-*.md
+sensor-processes-report-*.md
+influx-data*.json
+influx-raw-*.csv
+influx-sensor-avg.json
+peak-query.csv
+fresh-traces/
+
+# .NET build artifacts
+bin/
+obj/

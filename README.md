@@ -73,14 +73,24 @@ Then complete the manual steps (InfluxDB wizard, API token, Grafana data source)
 
 ### 5. Deploy Telegraf to test VMs
 
-Copy `setup-telegraf/` to each test VM and run:
+**Option A – bulk deploy (VM1–VM4 via SSH):**
+
+```powershell
+$env:INFLUXDB_TOKEN = "YOUR_TOKEN"
+.\Deploy-TelegrafToAllVMs.ps1
+```
+
+**Option B – manual per VM:** Copy `setup-telegraf/` to each test VM and run:
 
 ```powershell
 # No sensor VM:
-.\Install-Telegraf.ps1 -MonVmIp "172.46.16.24" -InfluxToken "YOUR_TOKEN" -SensorInstalled "no"
+.\Install-Telegraf.ps1 -MonVmIp "172.46.16.24" -InfluxToken "YOUR_TOKEN" -SensorInstalled "no" -NumCores 8
 
-# Sensor VM:
-.\Install-Telegraf.ps1 -MonVmIp "172.46.16.24" -InfluxToken "YOUR_TOKEN" -SensorInstalled "yes"
+# Sensor VM (version auto-detected from minionhost.exe or registry):
+.\Install-Telegraf.ps1 -MonVmIp "172.46.16.24" -InfluxToken "YOUR_TOKEN" -SensorInstalled "yes" -NumCores 8
+
+# Sensor VM with explicit version:
+.\Install-Telegraf.ps1 -MonVmIp "172.46.16.24" -InfluxToken "YOUR_TOKEN" -SensorInstalled "yes" -SensorVersion "24.1.0" -NumCores 8
 ```
 
 ### 6. Import Grafana dashboards

@@ -111,7 +111,47 @@ Between each scenario there is a **60-second pause** to create clean separation 
 
 # Skip scenarios that need special setup
 .\Run-AllScenarios.ps1 -SkipScenarios @("browser_streaming", "driver_load")
+
+# Run with WPR profiling (captures .etl traces to C:\PerfTest\traces\)
+.\Run-AllScenarios.ps1 -EnableProfiling -OnlyScenarios @("user_account_modify", "combined_high_density")
+
+# Profile with custom WPR profiles (e.g., add heap tracking)
+.\Run-AllScenarios.ps1 -EnableProfiling -ProfilingProfiles @("GeneralProfile", "DiskIO", "Heap")
 ```
+
+See [Profiling Guide](profiling-guide.md) for trace capture and analysis.
+
+## Running Tests with Profiling
+
+To capture WPR (Windows Performance Recorder) traces during scenarios:
+
+1. **On the test VM:** Run with `-EnableProfiling`:
+   ```powershell
+   .\Run-AllScenarios.ps1 -EnableProfiling -OnlyScenarios @("user_account_modify", "combined_high_density")
+   ```
+   Traces are saved to `C:\PerfTest\traces\` on the VM.
+
+2. **From your workstation:** Collect traces to your workstation:
+   ```powershell
+   cd sensor-perf-testing
+   .\test-scenarios\Collect-Traces.ps1
+   ```
+   Traces are organized by date: `C:\PerfTest\collected-traces\<date>\*.etl`
+
+3. **Analyze:** Use WPA (interactive) or the ETL Analyzer (automated). See [Profiling Guide](profiling-guide.md) for details.
+
+4. **Generate reports:** Use `generate-perf-report.ps1` or `generate-executive-summary.ps1` — see [tools/README.md](../tools/README.md).
+
+## Telegraf Tags (num_cores, sensor_version)
+
+Telegraf adds tags to each metric for filtering and normalization:
+
+| Tag | Description | Example |
+|-----|-------------|---------|
+| **num_cores** | CPU cores for normalization (sensor CPU ÷ num_cores = % of total system) | `8` |
+| **sensor_version** | Sensor version (e.g., `26.1.42`), auto-detected or set during Install-Telegraf | `26.1.42` or empty for no-sensor VMs |
+
+These tags are set when you install Telegraf (see [VM Setup Guide](vm-setup-guide.md)). Grafana uses them for CPU normalization and to filter by sensor version. Older data may have `sensor_version=""`; `$__all` in the dashboard includes that data.
 
 ## Running Individual Scenarios
 
