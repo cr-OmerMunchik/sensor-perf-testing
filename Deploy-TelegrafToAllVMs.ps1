@@ -65,8 +65,8 @@ foreach ($vm in $vms) {
     # SCP setup-telegraf files
     scp -o StrictHostKeyChecking=no "$setupTelegrafPath\Install-Telegraf.ps1" "$setupTelegrafPath\telegraf.conf" "${sshUser}@${ip}:C:\PerfTest\setup-telegraf\"
 
-    # Build Install-Telegraf args (use single quotes for token to avoid SSH escaping issues)
-    $argList = "-MonVmIp $MonVmIp -InfluxToken '$Token' -SensorInstalled $sensor -NumCores 8"
+    # Build Install-Telegraf args (do NOT wrap token in quotes - cmd.exe passes them literally)
+    $argList = "-MonVmIp $MonVmIp -InfluxToken $Token -SensorInstalled $sensor -NumCores 8"
 
     # Run Install-Telegraf (requires Admin - run from elevated PowerShell if needed)
     $cmd = "powershell -ExecutionPolicy Bypass -File C:\PerfTest\setup-telegraf\Install-Telegraf.ps1 $argList"

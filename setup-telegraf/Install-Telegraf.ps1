@@ -51,7 +51,9 @@ param(
     [string]$SensorVersion = "",
     [string]$MachineProfile = "large_8vcpu_16gb",
     [string]$OsVersion = "win11_26200",
-    [int]$NumCores = 8
+    [int]$NumCores = 8,
+    [string]$BackendType = "",
+    [string]$VmSize = "large"
 )
 
 $ErrorActionPreference = "Stop"
@@ -164,6 +166,8 @@ $config = $config -replace '  sensor_version = ""', "  sensor_version = `"$Senso
 $config = $config -replace '  machine_profile = "large_8vcpu_16gb"', "  machine_profile = `"$MachineProfile`""
 $config = $config -replace '  os_version = "win11_26200"', "  os_version = `"$OsVersion`""
 $config = $config -replace '  num_cores = "8"', "  num_cores = `"$NumCores`""
+$config = $config -replace '  backend_type = ""', "  backend_type = `"$BackendType`""
+$config = $config -replace '  vm_size = "large"', "  vm_size = `"$VmSize`""
 
 Set-Content -Path $confPath -Value $config -Encoding UTF8
 Write-Host "      Configuration written to $confPath" -ForegroundColor Gray

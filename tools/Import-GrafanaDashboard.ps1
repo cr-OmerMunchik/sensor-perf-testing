@@ -33,7 +33,8 @@ param(
     [string]$DashboardPath,
     [string]$ApiKey,
     [string]$BasicAuth,
-    [string]$DatasourceUid
+    [string]$DatasourceUid,
+    [switch]$BackupFirst
 )
 
 $ErrorActionPreference = "Stop"
@@ -82,6 +83,21 @@ $uri = "$GrafanaUrl/api/dashboards/db"
 $headers = @{
     Authorization = $auth
     "Content-Type" = "application/json"
+}
+
+# Backup existing dashboard from Grafana before overwriting
+if ($BackupFirst) {
+    $dashboardUid = "activeprobe-perf-001"
+    $backupUri = "$GrafanaUrl/api/dashboards/uid/$dashboardUid"
+    $backupDir = Split-Path -Parent $DashboardPath
+    $backupFile = Join-Path $backupDir "sensor-performance-dashboard-backup-$(Get-Date -Format 'yyyyMMdd-HHmmss').json"
+    try {
+        $existing = Invoke-RestMethod -Uri $backupUri -Method Get -Headers $headers
+        $existing.dashboard | ConvertTo-Json -Depth 100 | Set-Content $backupFile -Encoding UTF8
+        Write-Host "Backed up existing dashboard to $backupFile" -ForegroundColor Green
+    } catch {
+        Write-Host "Could not backup existing dashboard (may not exist yet): $($_.Exception.Message)" -ForegroundColor Yellow
+    }
 }
 
 Write-Host "Importing dashboard to $uri ..." -ForegroundColor Cyan

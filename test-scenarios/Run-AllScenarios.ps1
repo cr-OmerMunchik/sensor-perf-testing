@@ -79,12 +79,6 @@ $AllScenarios = [ordered]@{
         Description = "Idle baseline (15 min)"
         RequiresAdmin = $false
     }
-    "file_stress_loop" = @{
-        Script = "Test-FileStressLoop.ps1"
-        Params = @{ LoopCount = 5000; Iterations = 100 }
-        Description = "File create/rename/delete loop (~14 min)"
-        RequiresAdmin = $false
-    }
     "registry_storm" = @{
         Script = "Test-RegistryStorm.ps1"
         Params = @{ LoopCount = 2000; Iterations = 100 }
@@ -132,6 +126,12 @@ $AllScenarios = [ordered]@{
         Params = @{ Cycles = 10 }
         Description = "Driver load via Defender restart (~3 min)"
         RequiresAdmin = $true
+    }
+    "file_stress_loop" = @{
+        Script = "Test-FileStressLoop.ps1"
+        Params = @{ LoopCount = 5000; Iterations = 100 }
+        Description = "File create/rename/delete loop (~14 min)"
+        RequiresAdmin = $false
     }
     "zip_extraction" = @{
         Script = "Test-ZipExtraction.ps1"

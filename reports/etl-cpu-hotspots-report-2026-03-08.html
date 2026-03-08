@@ -1,0 +1,172 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ETL Trace Analysis Report</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #fff; color: #333; margin: 20px; max-width: 1400px; }
+h1 { color: #2980b9; border-bottom: 2px solid #2980b9; padding-bottom: 8px; }
+h2 { color: #2980b9; border-left: 4px solid #2980b9; padding-left: 12px; margin-top: 28px; }
+h3 { color: #34495e; margin-top: 20px; }
+table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+th, td { border: 1px solid #bdc3c7; padding: 6px 10px; text-align: left; }
+th { background: #ecf0f1; font-weight: 600; }
+tr:nth-child(even) { background: #f8f9fa; }
+tr:nth-child(odd) { background: #fff; }
+.numeric { font-family: 'Consolas', 'Monaco', monospace; }
+.summary-box { padding: 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid; }
+.summary-ok { background: #e8f8f5; border-color: #27ae60; }
+.summary-warn { background: #fef9e7; border-color: #f39c12; }
+.summary-crit { background: #fdedec; border-color: #e74c3c; }
+.callout { background: #ebf5fb; border-left: 4px solid #2980b9; padding: 12px 16px; margin: 16px 0; }
+.highlight-row { background: #fef9e7 !important; border: 2px solid #f39c12; }
+.worst-s2-row { background: #fdedec !important; border: 2px solid #e74c3c; font-weight: bold; }
+.vm-separator { border-left: 3px solid #2980b9 !important; }
+.bottom-line { background: #fdf2e9; border-left: 4px solid #e67e22; padding: 16px; margin: 16px 0; }
+.finding { margin-bottom: 10px; }
+.finding strong { color: #2c3e50; }
+.na-cell { background: #ecf0f1 !important; color: #7f8c8d !important; font-style: italic; cursor: help; }
+.total-row td { border-top: 2px solid #2c3e50; font-weight: bold; background: #ebedef !important; }
+.group-header th { text-align: center; font-size: 14px; font-weight: 700; }
+.sub-header th { text-align: center; font-size: 11px; font-weight: 600; background: #dde4e6; }
+.cpu-cell { font-family: 'Consolas', monospace; text-align: right; }
+.mem-cell { font-family: 'Consolas', monospace; text-align: right; }
+@media print { body { margin: 10px; } .no-print { display: none; } }
+</style>
+</head>
+<body>
+<h1>ETL Trace Analysis (CPU Hotspots)</h1>
+<p><strong>Generated:</strong> 2026-03-07 23:05:56</p>
+<p>ETL profiling analysis for the heaviest scenarios. Shows which processes and functions consumed the most CPU during the trace.</p>
+<h2>Scenario: <code>file_stress_loop</code></h2>
+<table>
+<tr><th>Property</th><th>Value</th></tr>
+<tr><td>Host</td><td>TEST-PERF-S2 (V26.1 + Phoenix)</td></tr>
+<tr><td>Trace File</td><td><code>file_stress_loop_TEST-PERF-S2_20260306_054903.etl</code></td></tr>
+<tr><td>Total CPU Samples</td><td>623,341</td></tr>
+<tr><td>Total CPU Weight</td><td>615,867 ms (10.3 min across all cores)</td></tr>
+</table>
+<div class="callout"><strong>How to read percentages:</strong> Each percentage represents the fraction of <em>total system CPU capacity</em> across all cores over the full trace duration. On a 2-core machine, 100% = both cores fully utilized for the entire trace. A sensor process using 0.5% means it used that fraction of the total CPU budget. Low percentages for sensor processes indicate efficient CPU usage.</div>
+<h3>Sensor Processes (Cybereason)</h3>
+<table><tr><th>Process</th><th>CPU time (ms)</th><th>% of Total CPU</th></tr>
+<tr><td><strong>minionhost</strong></td><td class="numeric">1,617.1</td><td class="numeric">0.26%</td></tr>
+<tr><td><strong>ActiveConsole</strong></td><td class="numeric">393.7</td><td class="numeric">0.06%</td></tr>
+<tr><td><strong>PylumLoader</strong></td><td class="numeric">180.5</td><td class="numeric">0.03%</td></tr>
+<tr><td><strong>CrAmTray</strong></td><td class="numeric">85.3</td><td class="numeric">0.01%</td></tr>
+<tr class="total-row"><td><strong>Total Sensor CPU</strong></td><td class="numeric">2,276.6</td><td class="numeric">0.36%</td></tr>
+</table>
+<h3>Other System Processes</h3>
+<table><tr><th>Process</th><th>CPU time (ms)</th><th>% of Total CPU</th></tr>
+<tr><td>powershell</td><td class="numeric">131,584.2</td><td class="numeric">21.37%</td></tr>
+<tr><td>SearchIndexer</td><td class="numeric">20,626.4</td><td class="numeric">3.35%</td></tr>
+<tr><td>svchost</td><td class="numeric">12,397.1</td><td class="numeric">2.01%</td></tr>
+<tr><td>System</td><td class="numeric">11,471.3</td><td class="numeric">1.86%</td></tr>
+<tr><td>Taskmgr</td><td class="numeric">7,676.5</td><td class="numeric">1.25%</td></tr>
+<tr><td>SearchProtocolHost</td><td class="numeric">5,375.4</td><td class="numeric">0.87%</td></tr>
+<tr><td>WmiPrvSE</td><td class="numeric">2,414.8</td><td class="numeric">0.39%</td></tr>
+<tr><td>conhost</td><td class="numeric">1,815.2</td><td class="numeric">0.29%</td></tr>
+<tr><td>explorer</td><td class="numeric">1,478.4</td><td class="numeric">0.24%</td></tr>
+<tr><td>telegraf</td><td class="numeric">1,112.4</td><td class="numeric">0.18%</td></tr>
+<tr><td>vmtoolsd</td><td class="numeric">1,052.6</td><td class="numeric">0.17%</td></tr>
+<tr><td>dwm</td><td class="numeric">905.1</td><td class="numeric">0.15%</td></tr>
+<tr><td>services</td><td class="numeric">898.0</td><td class="numeric">0.15%</td></tr>
+<tr><td>csrss</td><td class="numeric">837.2</td><td class="numeric">0.14%</td></tr>
+<tr><td>wpr</td><td class="numeric">330.8</td><td class="numeric">0.05%</td></tr>
+<tr><td>lsass</td><td class="numeric">303.7</td><td class="numeric">0.05%</td></tr>
+<tr><td>WUDFHost</td><td class="numeric">109.3</td><td class="numeric">0.02%</td></tr>
+<tr><td>MemCompression</td><td class="numeric">95.1</td><td class="numeric">0.02%</td></tr>
+<tr><td>AggregatorHost</td><td class="numeric">94.8</td><td class="numeric">0.02%</td></tr>
+<tr><td>msedgewebview2</td><td class="numeric">78.7</td><td class="numeric">0.01%</td></tr>
+<tr><td>LogonUI</td><td class="numeric">77.5</td><td class="numeric">0.01%</td></tr>
+<tr><td>fltMC</td><td class="numeric">75.8</td><td class="numeric">0.01%</td></tr>
+<tr><td>WindowsTerminal</td><td class="numeric">31.0</td><td class="numeric">0.01%</td></tr>
+<tr><td>StartMenuExperienceHost</td><td class="numeric">21.8</td><td class="numeric">0%</td></tr>
+<tr><td>sshd</td><td class="numeric">18.2</td><td class="numeric">0%</td></tr>
+<tr><td>Registry</td><td class="numeric">17.8</td><td class="numeric">0%</td></tr>
+<tr><td>SearchHost</td><td class="numeric">11.9</td><td class="numeric">0%</td></tr>
+<tr><td>fontdrvhost</td><td class="numeric">7.6</td><td class="numeric">0%</td></tr>
+<tr><td>sihost</td><td class="numeric">7.0</td><td class="numeric">0%</td></tr>
+<tr><td>rdpclip</td><td class="numeric">6.9</td><td class="numeric">0%</td></tr>
+<tr><td>RuntimeBroker</td><td class="numeric">5.0</td><td class="numeric">0%</td></tr>
+<tr><td>OneDrive</td><td class="numeric">4.0</td><td class="numeric">0%</td></tr>
+<tr><td>winlogon</td><td class="numeric">3.0</td><td class="numeric">0%</td></tr>
+<tr><td>OneDrive.Sync.Service</td><td class="numeric">3.0</td><td class="numeric">0%</td></tr>
+<tr><td>SecurityHealthService</td><td class="numeric">3.0</td><td class="numeric">0%</td></tr>
+<tr><td>ShellHost</td><td class="numeric">2.0</td><td class="numeric">0%</td></tr>
+<tr><td>wininit</td><td class="numeric">1.0</td><td class="numeric">0%</td></tr>
+<tr><td>dasHost</td><td class="numeric">1.0</td><td class="numeric">0%</td></tr>
+<tr><td>OpenConsole</td><td class="numeric">1.0</td><td class="numeric">0%</td></tr>
+<tr><td>taskhostw</td><td class="numeric">1.0</td><td class="numeric">0%</td></tr>
+<tr><td>smss</td><td class="numeric">1.0</td><td class="numeric">0%</td></tr>
+<tr><td>CrossDeviceResume</td><td class="numeric">1.0</td><td class="numeric">0%</td></tr>
+</table>
+<h2>Scenario: <code>browser_streaming</code></h2>
+<table>
+<tr><th>Property</th><th>Value</th></tr>
+<tr><td>Host</td><td>TEST-PERF-S2 (V26.1 + Phoenix)</td></tr>
+<tr><td>Trace File</td><td><code>browser_streaming_TEST-PERF-S2_20260306_053050.etl</code></td></tr>
+<tr><td>Total CPU Samples</td><td>43,755</td></tr>
+<tr><td>Total CPU Weight</td><td>43,345 ms (0.7 min across all cores)</td></tr>
+</table>
+<div class="callout"><strong>How to read percentages:</strong> Each percentage represents the fraction of <em>total system CPU capacity</em> across all cores over the full trace duration. On a 2-core machine, 100% = both cores fully utilized for the entire trace. A sensor process using 0.5% means it used that fraction of the total CPU budget. Low percentages for sensor processes indicate efficient CPU usage.</div>
+<h3>Sensor Processes (Cybereason)</h3>
+<table><tr><th>Process</th><th>CPU time (ms)</th><th>% of Total CPU</th></tr>
+<tr><td><strong>minionhost</strong></td><td class="numeric">117.1</td><td class="numeric">0.27%</td></tr>
+<tr><td><strong>CrAmTray</strong></td><td class="numeric">24.9</td><td class="numeric">0.06%</td></tr>
+<tr><td><strong>ActiveConsole</strong></td><td class="numeric">21.8</td><td class="numeric">0.05%</td></tr>
+<tr><td><strong>PylumLoader</strong></td><td class="numeric">9.9</td><td class="numeric">0.02%</td></tr>
+<tr class="total-row"><td><strong>Total Sensor CPU</strong></td><td class="numeric">173.7</td><td class="numeric">0.4%</td></tr>
+</table>
+<h3>Other System Processes</h3>
+<table><tr><th>Process</th><th>CPU time (ms)</th><th>% of Total CPU</th></tr>
+<tr><td>powershell</td><td class="numeric">2,393.9</td><td class="numeric">5.52%</td></tr>
+<tr><td>svchost</td><td class="numeric">1,008.2</td><td class="numeric">2.33%</td></tr>
+<tr><td>Taskmgr</td><td class="numeric">522.9</td><td class="numeric">1.21%</td></tr>
+<tr><td>wpr</td><td class="numeric">393.0</td><td class="numeric">0.91%</td></tr>
+<tr><td>System</td><td class="numeric">374.2</td><td class="numeric">0.86%</td></tr>
+<tr><td>conhost</td><td class="numeric">181.6</td><td class="numeric">0.42%</td></tr>
+<tr><td>WmiPrvSE</td><td class="numeric">129.4</td><td class="numeric">0.3%</td></tr>
+<tr><td>telegraf</td><td class="numeric">112.4</td><td class="numeric">0.26%</td></tr>
+<tr><td>explorer</td><td class="numeric">85.1</td><td class="numeric">0.2%</td></tr>
+<tr><td>dwm</td><td class="numeric">62.2</td><td class="numeric">0.14%</td></tr>
+<tr><td>vmtoolsd</td><td class="numeric">56.4</td><td class="numeric">0.13%</td></tr>
+<tr><td>services</td><td class="numeric">44.3</td><td class="numeric">0.1%</td></tr>
+<tr><td>csrss</td><td class="numeric">39.4</td><td class="numeric">0.09%</td></tr>
+<tr><td>lsass</td><td class="numeric">28.6</td><td class="numeric">0.07%</td></tr>
+<tr><td>fltMC</td><td class="numeric">13.0</td><td class="numeric">0.03%</td></tr>
+<tr><td>AggregatorHost</td><td class="numeric">6.0</td><td class="numeric">0.01%</td></tr>
+<tr><td>msedgewebview2</td><td class="numeric">3.4</td><td class="numeric">0.01%</td></tr>
+<tr><td>sshd</td><td class="numeric">3.0</td><td class="numeric">0.01%</td></tr>
+<tr><td>SearchIndexer</td><td class="numeric">2.9</td><td class="numeric">0.01%</td></tr>
+<tr><td>StartMenuExperienceHost</td><td class="numeric">2.0</td><td class="numeric">0%</td></tr>
+<tr><td>OneDrive.Sync.Service</td><td class="numeric">2.0</td><td class="numeric">0%</td></tr>
+<tr><td>vm3dservice</td><td class="numeric">1.0</td><td class="numeric">0%</td></tr>
+<tr><td>fontdrvhost</td><td class="numeric">1.0</td><td class="numeric">0%</td></tr>
+<tr><td>rdpclip</td><td class="numeric">1.0</td><td class="numeric">0%</td></tr>
+<tr><td>OneDrive</td><td class="numeric">1.0</td><td class="numeric">0%</td></tr>
+<tr><td>WUDFHost</td><td class="numeric">1.0</td><td class="numeric">0%</td></tr>
+<tr><td>ShellExperienceHost</td><td class="numeric">1.0</td><td class="numeric">0%</td></tr>
+<tr><td>MemCompression</td><td class="numeric">1.0</td><td class="numeric">0%</td></tr>
+</table>
+<h2>Function-Level Hotspots</h2>
+<div class="callout"><strong>What this shows:</strong> Top CPU-consuming functions within Cybereason sensor modules, resolved from PDB symbol files. OS and third-party functions (ntoskrnl, boost, etc.) are excluded. Percentages are fractions of total system CPU capacity.</div>
+<h3>file_stress_loop</h3>
+<table><tr><th>Function</th><th>Module</th><th>CPU time (ms)</th><th>% of Total CPU</th></tr>
+<tr><td><code>TrayKeepAliveTask::handler</code></td><td>minionhost</td><td class="numeric">681.1</td><td class="numeric">0.11%</td></tr>
+<tr><td><code>ThreadStatCollector::collect</code></td><td>minionhost</td><td class="numeric">240.4</td><td class="numeric">0.04%</td></tr>
+<tr><td><code>GuardedProcess::isRunningByName</code></td><td>PylumLoader</td><td class="numeric">155.7</td><td class="numeric">0.03%</td></tr>
+<tr><td><code>EpManagementService::openHandle</code></td><td>minionhost</td><td class="numeric">104.8</td><td class="numeric">0.02%</td></tr>
+<tr><td><code>RansomwareService::ransomwareServiceManager</code></td><td>minionhost</td><td class="numeric">90.7</td><td class="numeric">0.01%</td></tr>
+<tr><td><code>PublishQueueManager::run</code></td><td>ActiveConsole</td><td class="numeric">74.8</td><td class="numeric">0.01%</td></tr>
+<tr><td><code>`anonymous namespace'::debugCallback</code></td><td>ActiveConsole</td><td class="numeric">52.9</td><td class="numeric">0.01%</td></tr>
+<tr><td><code>AvControlUtil::setUpdateProxy</code></td><td>minionhost</td><td class="numeric">40.7</td><td class="numeric">0.01%</td></tr>
+<tr><td><code>EpManagementService::getServiceStatus</code></td><td>minionhost</td><td class="numeric">31.8</td><td class="numeric">0.01%</td></tr>
+<tr><td><code>EpManagementService::checkServiceStatus</code></td><td>minionhost</td><td class="numeric">24.8</td><td class="numeric">0%</td></tr>
+<tr><td><code>CounterCollector::collect</code></td><td>minionhost</td><td class="numeric">23.2</td><td class="numeric">0%</td></tr>
+<tr><td><code>CounterCollector::collect</code></td><td>ActiveConsole</td><td class="numeric">20.4</td><td class="numeric">0%</td></tr>
+<tr><td><code>RansomwareService::checkServiceStatus</code></td><td>minionhost</td><td class="numeric">19.7</td><td class="numeric">0%</td></tr>
+</table>
+</body></html>
+
+

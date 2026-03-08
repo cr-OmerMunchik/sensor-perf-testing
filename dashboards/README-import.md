@@ -41,10 +41,13 @@ To push the latest dashboard (e.g. after fixes) to Grafana without using the UI:
 ```powershell
 # Create a Grafana API key first: Configuration > API Keys > Add (Admin role)
 $env:GRAFANA_API_KEY = "your-api-key"
-.\tools\Import-GrafanaDashboard.ps1
+.\tools\Import-GrafanaDashboard.ps1 -BackupFirst
+
+# Or with basic auth (backs up existing dashboard before overwriting):
+.\tools\Import-GrafanaDashboard.ps1 -BackupFirst -BasicAuth "admin:YOUR_PASSWORD"
 ```
 
-Or with basic auth: `.\tools\Import-GrafanaDashboard.ps1 -BasicAuth "admin:YOUR_PASSWORD"`
+Use `-BackupFirst` to save the current Grafana dashboard to `dashboards/sensor-performance-dashboard-backup-YYYYMMDD-HHMMSS.json` before overwriting.
 
 ## Using the Dashboard
 
