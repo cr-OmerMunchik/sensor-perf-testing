@@ -65,7 +65,8 @@ param(
     [int]$NumCores = 2,
     [string]$EtlOutputPath,
     [string]$EtlJsonPath,
-    [switch]$GenerateConfluence
+    [switch]$GenerateConfluence,
+    [switch]$LightMode
 )
 
 $ErrorActionPreference = "Stop"
@@ -130,20 +131,38 @@ tr:nth-child(odd) { background: #fff; }
 
 # ── Scenario descriptions (ordered: file-heavy scenarios last) ──
 
-$script:ScenarioDescriptions = [ordered]@{
-    "idle_baseline"          = "Idle baseline - no workload running, measures resting CPU and memory consumption"
-    "registry_storm"         = "Rapid registry key set/delete operations (2000 keys x 100 iterations)"
-    "network_burst"          = "HTTP request burst to external endpoints (300 requests x 50 iterations)"
-    "process_storm"          = "Rapid process spawn and terminate cycles (100 processes x 30 bursts)"
-    "rpc_generation"         = "WMI/RPC query loop simulating management traffic (500 queries x 25 iterations)"
-    "service_cycle"          = "Windows service create/start/stop/delete cycle (200 cycles)"
-    "user_account_modify"    = "User account create/modify/delete cycle (200 cycles)"
-    "browser_streaming"      = "Browser streaming session simulation (15 minutes)"
-    "driver_load"            = "Driver load/unload via Defender restart (10 cycles)"
-    "file_stress_loop"       = "Continuous file create/rename/delete loop (5000 files x 100 iterations)"
-    "zip_extraction"         = "ZIP extraction workload - archive with 10,000 files (10 iterations)"
-    "file_storm"             = "Mass file create/modify/delete in bursts (10,000 files x 30 bursts)"
-    "combined_high_density"  = "All workload generators running in parallel (15 minutes)"
+if ($LightMode) {
+    $script:ScenarioDescriptions = [ordered]@{
+        "idle_baseline"          = "Idle baseline - no workload running (5 min, light mode)"
+        "registry_storm"         = "Rapid registry key set/delete operations (200 keys x 10 iterations, light mode)"
+        "network_burst"          = "HTTP request burst to external endpoints (50 requests x 10 iterations, light mode)"
+        "process_storm"          = "Rapid process spawn and terminate cycles (30 processes x 10 bursts, light mode)"
+        "rpc_generation"         = "WMI/RPC query loop simulating management traffic (100 queries x 10 iterations, light mode)"
+        "service_cycle"          = "Windows service create/start/stop/delete cycle (20 cycles, light mode)"
+        "user_account_modify"    = "User account create/modify/delete cycle (20 cycles, light mode)"
+        "browser_streaming"      = "Browser streaming session simulation (3 minutes, light mode)"
+        "driver_load"            = "Driver load/unload via Defender restart (3 cycles, light mode)"
+        "file_stress_loop"       = "Continuous file create/rename/delete loop (500 files x 5 iterations, light mode)"
+        "zip_extraction"         = "ZIP extraction workload - archive with 2,000 files (3 iterations, light mode)"
+        "file_storm"             = "Mass file create/modify/delete in bursts (2,000 files x 5 bursts, light mode)"
+        "combined_high_density"  = "All workload generators running in parallel (5 minutes, light mode)"
+    }
+} else {
+    $script:ScenarioDescriptions = [ordered]@{
+        "idle_baseline"          = "Idle baseline - no workload running, measures resting CPU and memory consumption"
+        "registry_storm"         = "Rapid registry key set/delete operations (2000 keys x 100 iterations)"
+        "network_burst"          = "HTTP request burst to external endpoints (300 requests x 50 iterations)"
+        "process_storm"          = "Rapid process spawn and terminate cycles (100 processes x 30 bursts)"
+        "rpc_generation"         = "WMI/RPC query loop simulating management traffic (500 queries x 25 iterations)"
+        "service_cycle"          = "Windows service create/start/stop/delete cycle (200 cycles)"
+        "user_account_modify"    = "User account create/modify/delete cycle (200 cycles)"
+        "browser_streaming"      = "Browser streaming session simulation (15 minutes)"
+        "driver_load"            = "Driver load/unload via Defender restart (10 cycles)"
+        "file_stress_loop"       = "Continuous file create/rename/delete loop (5000 files x 100 iterations)"
+        "zip_extraction"         = "ZIP extraction workload - archive with 10,000 files (10 iterations)"
+        "file_storm"             = "Mass file create/modify/delete in bursts (10,000 files x 30 bursts)"
+        "combined_high_density"  = "All workload generators running in parallel (15 minutes)"
+    }
 }
 
 # ── Build the main report ──
@@ -240,8 +259,9 @@ $($script:SharedCss)
 </style>
 </head>
 <body>
-<h1>Cybereason Sensor Performance Report</h1>
+<h1>Cybereason Sensor Performance Report$(if ($LightMode) { ' (Light Mode)' })</h1>
 <p><strong>Generated:</strong> $genTime</p>
+$(if ($LightMode) { '<div class="callout" style="border-left: 4px solid #f39c12;"><strong>Light Mode:</strong> This report was generated using reduced workload parameters optimized for small 2-core VMs. Event counts and durations are significantly lower than the full test suite to prevent CPU saturation. Results reflect relative performance differences between versions under moderate load.</div>' })
 "@)
 
     # Test start/end/duration
@@ -304,7 +324,7 @@ $($script:SharedCss)
 
     [void]$sb.AppendLine(@"
 <div class="summary-box summary-warn">
-<strong>About N/A values in this report:</strong> Cells marked <span class="na-cell" style="padding: 2px 6px;">N/A</span> indicate that the scenario did not complete on that host, so no data was collected. Specifically, <strong>S4 (V24.1 + Legacy)</strong> was unable to complete the last three scenarios (<code>zip_extraction</code>, <code>file_storm</code>, <code>combined_high_density</code>) because the <strong>Nnx component</strong> (a file-monitoring process present only in V24.1) caused extreme CPU and memory load during earlier file-heavy tests. The Nnx backlog prevented subsequent scenarios from running within the allotted time. This limitation was addressed in V26.1 where Nnx was removed.
+<strong>About N/A values in this report:</strong> Cells marked <span class="na-cell" style="padding: 2px 6px;">N/A</span> indicate that the scenario did not complete on that host, so no data was collected. Some sensor hosts may not complete file-heavy scenarios (<code>file_stress_loop</code>, <code>file_storm</code>, <code>zip_extraction</code>, <code>combined_high_density</code>) because the <strong>Nnx component</strong> (a file-monitoring process present in all sensor versions) can cause extreme CPU load during file-heavy tests, leaving insufficient CPU for the test harness to complete within the allotted time.
 </div>
 "@)
 
@@ -703,16 +723,21 @@ $($script:SharedCss)
             [void]$sb.AppendLine(@"
 <div class="callout">
 <strong>Uptime:</strong> Percentage of Telegraf collection intervals where the process was detected as running, measured across the entire test duration (all scenarios). 100% = process never crashed or restarted.<br>
+<strong>Restarts:</strong> Number of times the process was detected as restarting (went from down to up) during the test run. 0 = no restarts detected.<br>
 <strong>DB Size:</strong> Last observed size of the sensor's local database file on disk at the end of the test run.
 </div>
 "@)
-            [void]$sb.AppendLine("<table><tr><th>Role</th><th>MinionHost Uptime</th><th>ActiveConsole Uptime</th><th>DB Size</th></tr>")
+            [void]$sb.AppendLine("<table><tr><th>Role</th><th>MinionHost Uptime</th><th>MinionHost Restarts</th><th>ActiveConsole Uptime</th><th>ActiveConsole Restarts</th><th>DB Size</th></tr>")
             foreach ($l in $sensorHostsUptime) {
                 $mh = "$([math]::Round([double]$l.minionhost_uptime, 1))%"
                 $ac = "$([math]::Round([double]$l.activeconsole_uptime, 1))%"
+                $mhR = 0; try { if ($l.minionhost_restarts -ne $null) { $mhR = [int]$l.minionhost_restarts } } catch {}
+                $acR = 0; try { if ($l.activeconsole_restarts -ne $null) { $acR = [int]$l.activeconsole_restarts } } catch {}
+                $mhRColor = if ($mhR -eq 0) { "#27ae60" } elseif ($mhR -le 2) { "#f39c12" } else { "#e74c3c" }
+                $acRColor = if ($acR -eq 0) { "#27ae60" } elseif ($acR -le 2) { "#f39c12" } else { "#e74c3c" }
                 $db = $InfluxData.sensorDbSize | Where-Object { $_.host -eq $l.host } | Select-Object -First 1
                 $dbStr = if ($db) { "$([math]::Round([long]$db.sizeBytes / 1MB, 1)) MB" } else { "N/A" }
-                [void]$sb.AppendLine("<tr><td>$(Get-Role $l.host)</td><td class=`"numeric`">$mh</td><td class=`"numeric`">$ac</td><td class=`"numeric`">$dbStr</td></tr>")
+                [void]$sb.AppendLine("<tr><td>$(Get-Role $l.host)</td><td class=`"numeric`">$mh</td><td class=`"numeric`" style=`"background-color: $mhRColor; color: white;`">$mhR</td><td class=`"numeric`">$ac</td><td class=`"numeric`" style=`"background-color: $acRColor; color: white;`">$acR</td><td class=`"numeric`">$dbStr</td></tr>")
             }
             [void]$sb.AppendLine("</table>")
         }
@@ -1030,7 +1055,7 @@ The scenario with the largest cross-host total CPU variance is highlighted in ye
                 $nnxEntries = @($sysProc | Where-Object { $_.process -eq "Nnx" -and [double]$_.avgCpu -gt 1 })
                 if ($nnxEntries.Count -gt 0) {
                     $worstNnx = $nnxEntries | Sort-Object -Property { [double]$_.avgCpu } -Descending | Select-Object -First 1
-                    [void]$sb.AppendLine("<div class=`"finding`"><strong>For comparison &mdash; Nnx Process (V24.1 Only):</strong> Nnx is a file-monitoring component present only in sensor V24.1 (removed in V26.1). During <code>$($worstNnx.scenario)</code>, Nnx averaged <strong>$([math]::Round([double]$worstNnx.avgCpu, 1))%</strong> CPU (peak: $([math]::Round([double]$worstNnx.peakCpu, 1))%). Nnx reacts heavily to file I/O and can continue processing its backlog long after the workload ends. V26.1 eliminates this bottleneck entirely.</div>")
+                    [void]$sb.AppendLine("<div class=`"finding`"><strong>Nnx Process Impact:</strong> Nnx is a file-monitoring component present in all sensor versions. During <code>$($worstNnx.scenario)</code>, Nnx averaged <strong>$([math]::Round([double]$worstNnx.avgCpu, 1))%</strong> CPU (peak: $([math]::Round([double]$worstNnx.peakCpu, 1))%). Nnx reacts heavily to file I/O and can continue processing its backlog long after the workload ends, consuming significant CPU.</div>")
                 }
             }
 
@@ -1039,7 +1064,7 @@ The scenario with the largest cross-host total CPU variance is highlighted in ye
                 $improvement = [math]::Round($avgS4Cpu - $avgS2Cpu, 1)
                 if ($improvement -gt 0) {
                     $pctImprovement = [math]::Round(($improvement / $avgS4Cpu) * 100, 0)
-                    [void]$sb.AppendLine("<div class=`"finding`"><strong>Version Improvement (V26.1 vs V24.1):</strong> V26.1+Phoenix uses <strong>$improvement%</strong> less sensor CPU on average than V24.1+Legacy (a <strong>$pctImprovement%</strong> reduction), primarily due to the removal of the Nnx component and general sensor optimizations.</div>")
+                    [void]$sb.AppendLine("<div class=`"finding`"><strong>Version Improvement (V26.1 vs V24.1):</strong> V26.1+Phoenix uses <strong>$improvement%</strong> less sensor CPU on average than V24.1+Legacy (a <strong>$pctImprovement%</strong> reduction).</div>")
                 }
             }
         }
@@ -1075,7 +1100,7 @@ The scenario with the largest cross-host total CPU variance is highlighted in ye
 
         $nnxHigh = @($sysProc | Where-Object { $_.process -eq "Nnx" -and [double]$_.avgCpu -gt 5 })
         if ($nnxHigh.Count -gt 0) {
-            [void]$sb.AppendLine("<li><strong>V24.1 Sensor (Nnx):</strong> The Nnx component on V24.1 consumes significant CPU during file-heavy workloads and continues processing after workloads end. V26.1 eliminates this bottleneck entirely.</li>")
+            [void]$sb.AppendLine("<li><strong>Nnx Component:</strong> The Nnx file-monitoring component (present in all versions) consumes significant CPU during file-heavy workloads and can continue processing its backlog after workloads end.</li>")
         }
 
         if ($avgS3Cpu -gt 0 -and $avgS2Cpu -gt 0) {
@@ -1090,7 +1115,7 @@ The scenario with the largest cross-host total CPU variance is highlighted in ye
         }
 
         $scenariosRun = @($sensorVm | ForEach-Object { $_.scenario } | Select-Object -Unique)
-        [void]$sb.AppendLine("<li><strong>Test Coverage:</strong> $($scenariosRun.Count) out of 13 scenarios completed across sensor hosts. $(if ($scenariosRun.Count -lt 13) { 'S4 (V24.1+Legacy) did not complete file-heavy scenarios due to Nnx overload (see N/A values).' } else { 'All scenarios completed successfully on S2 and S3.' })</li>")
+        [void]$sb.AppendLine("<li><strong>Test Coverage:</strong> $($scenariosRun.Count) out of 13 scenarios completed across sensor hosts. $(if ($scenariosRun.Count -lt 13) { 'Some sensor hosts did not complete file-heavy scenarios due to Nnx CPU overload (see N/A values).' } else { 'All scenarios completed successfully.' })</li>")
 
         if ($maxDiskVarScenario) {
             [void]$sb.AppendLine("<li><strong>Disk I/O:</strong> Largest write throughput difference between sensor and baseline hosts observed during <code>$maxDiskVarScenario</code>.</li>")
@@ -1185,19 +1210,49 @@ $($script:SharedCss)
         $hasAnyFunctions = @($validTraces | Where-Object { $_.topFunctions -and $_.topFunctions.Count -gt 0 }).Count -gt 0
         if (($UseSymbols -or $hasAnyFunctions) -and $validTraces.Count -gt 0) {
             [void]$sb.AppendLine("<h2>Function-Level Hotspots</h2>")
-            [void]$sb.AppendLine('<div class="callout"><strong>What this shows:</strong> Top CPU-consuming functions within Cybereason sensor modules, resolved from PDB symbol files. OS and third-party functions (ntoskrnl, boost, etc.) are excluded. Percentages are fractions of total system CPU capacity.</div>')
             $sensorModules = @("minionhost", "ActiveConsole", "PylumLoader", "CrsSvc", "AmSvc", "WscIfSvc", "ExecutionPreventionSvc", "CrAmTray", "CrDrvCtrl", "Nnx")
             foreach ($t in $top3Traces) {
                 if ($t.topFunctions -and $t.topFunctions.Count -gt 0) {
                     $filtered = @($t.topFunctions | Where-Object {
-                        $sensorModules -contains $_.module -and $_.function -notlike "boost::*"
+                        $sensorModules -contains $_.module -and
+                        $_.function -notlike "boost::*" -and
+                        $_.function -notlike "std::*" -and
+                        $_.function -notlike "sqlite3*" -and
+                        $_.function -notlike "nghttp2*" -and
+                        $_.function -notlike "ossl_*" -and
+                        $_.function -notlike "OPENSSL_*" -and
+                        $_.function -notlike "operator new*" -and
+                        $_.function -notlike "operator delete*" -and
+                        $_.function -notlike "__crt_*" -and
+                        $_.function -notlike "memcpy*" -and
+                        $_.function -notlike "memset*" -and
+                        $_.function -notlike "strlen*" -and
+                        $_.function -notlike "malloc*" -and
+                        $_.function -notlike "free*" -and
+                        $_.function -notlike "vcruntime*" -and
+                        $_.function -notlike "_guard_*" -and
+                        $_.function -notlike "__guard_*" -and
+                        $_.function -notlike "__security_*" -and
+                        $_.function -notlike "ntdll!*" -and
+                        $_.function -notlike "ntoskrnl!*" -and
+                        $_.function -notlike "ucrtbase!*"
                     })
                     if ($filtered.Count -eq 0) { continue }
                     $scenarioName = $t.scenario -replace '_TEST-PERF-S\d+(_\d+)?$', ''
+                    $hasUnresolved = @($filtered | Where-Object { $_.function -match '^0x' }).Count -gt 0
+                    $hasResolved = @($filtered | Where-Object { $_.function -notmatch '^0x' }).Count -gt 0
+                    if ($hasUnresolved -and -not $hasResolved) {
+                        [void]$sb.AppendLine('<div class="callout" style="border-left: 4px solid #f39c12;"><strong>Symbol Note:</strong> Function names could not be resolved because the PDB symbol files do not exactly match the installed sensor binaries (GUID mismatch). The addresses shown are memory offsets within each module. To resolve function names, obtain PDB files from the exact same build as the installed sensor.</div>')
+                    } else {
+                        [void]$sb.AppendLine('<div class="callout"><strong>What this shows:</strong> Top CPU-consuming functions within Cybereason sensor modules, resolved from PDB symbol files. OS and third-party functions (ntoskrnl, boost, etc.) are excluded. Percentages are fractions of total system CPU capacity.</div>')
+                    }
+                    $sortedAll = $filtered | Sort-Object { [double]$_.weightMs } -Descending
                     [void]$sb.AppendLine("<h3>$scenarioName</h3>")
-                    [void]$sb.AppendLine("<table><tr><th>Function</th><th>Module</th><th>CPU time (ms)</th><th>% of Total CPU</th></tr>")
-                    foreach ($f in ($filtered | Select-Object -First 20)) {
-                        [void]$sb.AppendLine("<tr><td><code>$($f.function)</code></td><td>$($f.module)</td><td class=`"numeric`">$([math]::Round([double]$f.weightMs, 1).ToString('N1'))</td><td class=`"numeric`">$([math]::Round([double]$f.percent, 3))%</td></tr>")
+                    [void]$sb.AppendLine("<table><tr><th>#</th><th>Module</th><th>Function</th><th>CPU time (ms)</th><th>% of Total CPU</th></tr>")
+                    $rank = 1
+                    foreach ($f in $sortedAll) {
+                        [void]$sb.AppendLine("<tr><td>$rank</td><td><strong>$($f.module)</strong></td><td><code>$($f.function)</code></td><td class=`"numeric`">$([math]::Round([double]$f.weightMs, 1).ToString('N1'))</td><td class=`"numeric`">$([math]::Round([double]$f.percent, 3))%</td></tr>")
+                        $rank++
                     }
                     [void]$sb.AppendLine("</table>")
                 }

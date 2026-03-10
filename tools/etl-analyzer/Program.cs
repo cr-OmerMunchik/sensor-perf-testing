@@ -86,7 +86,7 @@ foreach (var etlPath in etlFiles)
 
     try
     {
-        var result = ProcessTrace(etlPath, scenarioName, sensorProcessNames, useSymbols, symbolPath, topProcessesLimit);
+        var result = EtlAnalyzer.ProcessTrace(etlPath, scenarioName, sensorProcessNames, useSymbols, symbolPath, topProcessesLimit);
         allResults.Add(result);
     }
     catch (Exception ex)
@@ -104,149 +104,167 @@ foreach (var etlPath in etlFiles)
 var output = JsonSerializer.Serialize(new { traces = allResults }, new JsonSerializerOptions { WriteIndented = true });
 Console.WriteLine(output);
 
-static object ProcessTrace(string tracePath, string scenarioName, HashSet<string> sensorProcessNames, bool useSymbols, string? symbolPath, int topProcessesLimit = 10)
+static class EtlAnalyzer
 {
-    var processWeights = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
-    var functionWeights = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
-    double totalWeight = 0;
-    int sampleCount = 0;
-
-    var settings = new TraceProcessorSettings { AllowLostEvents = true };
-
-    using (var trace = TraceProcessor.Create(tracePath, settings))
+    private static readonly string[] ThirdPartyPrefixes =
     {
-        var pendingCpu = trace.UseCpuSamplingData();
-        IPendingResult<ISymbolDataSource>? pendingSymbols = useSymbols ? trace.UseSymbols() : null;
+        "sqlite3", "nghttp2", "boost::", "std::", "operator new", "operator delete",
+        "ossl_", "OPENSSL_", "EVP_", "SHA256", "MD5", "AES_",
+        "__crt_", "_Crt", "memcpy", "memset", "memmove", "strlen", "strcmp", "strcpy",
+        "malloc", "free", "realloc", "calloc",
+        "_invalid_parameter", "__report_rangecheckfailure", "__GSHandlerCheck",
+        "__security_check_cookie", "_guard_", "__guard_",
+    };
 
-        trace.Process();
-
-        var cpuData = pendingCpu.Result;
-        if (pendingSymbols != null)
-        {
-            var symbolData = pendingSymbols.Result;
-            if (!string.IsNullOrEmpty(symbolPath))
-                Environment.SetEnvironmentVariable("_NT_SYMBOL_PATH", symbolPath, EnvironmentVariableTarget.Process);
-            symbolData.LoadSymbolsForConsoleAsync(SymCachePath.Automatic, SymbolPath.Automatic).GetAwaiter().GetResult();
-        }
-
-        foreach (var sample in cpuData.Samples)
-        {
-            if (sample.IsExecutingDeferredProcedureCall == true || sample.IsExecutingInterruptServicingRoutine == true)
-                continue;
-
-            var weight = (double)sample.Weight.TotalMilliseconds;
-            totalWeight += weight;
-            sampleCount++;
-
-            var processName = sample.Process?.ImageName ?? sample.Image?.FileName ?? "Unknown";
-            var processBase = Path.GetFileNameWithoutExtension(processName);
-            if (string.IsNullOrEmpty(processBase)) processBase = processName;
-
-            processWeights.TryGetValue(processBase, out var pWeight);
-            processWeights[processBase] = pWeight + weight;
-
-            if (sensorProcessNames.Contains(processBase))
-            {
-                var funcKey = GetFunctionKey(sample, sensorProcessNames);
-                if (funcKey != null)
-                {
-                    var topKey = GetTopFrameKey(sample);
-                    var useKey = funcKey;
-                    if (topKey != null && topKey.Contains('!') && funcKey.Contains('+'))
-                        useKey = topKey;
-                    functionWeights.TryGetValue(useKey, out var fWeight);
-                    functionWeights[useKey] = fWeight + weight;
-                }
-            }
-        }
+    private static bool IsThirdPartyFunction(string funcName)
+    {
+        if (string.IsNullOrEmpty(funcName)) return true;
+        if (funcName.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) return true;
+        foreach (var prefix in ThirdPartyPrefixes)
+            if (funcName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
     }
 
-    var processQuery = processWeights
-        .Where(kv => !string.Equals(kv.Key, "Idle", StringComparison.OrdinalIgnoreCase))
-        .OrderByDescending(kv => kv.Value);
-    var topProcesses = (topProcessesLimit > 0 ? processQuery.Take(topProcessesLimit) : processQuery)
-        .Select(kv => new { process = kv.Key, weightMs = Math.Round(kv.Value, 1), percent = totalWeight > 0 ? Math.Round(100 * kv.Value / totalWeight, 2) : 0 })
-        .ToList();
-
-    var topFunctions = functionWeights
-        .OrderByDescending(kv => kv.Value)
-        .Take(15)
-        .Select(kv =>
-        {
-            var (module, func) = SplitModuleFunction(kv.Key);
-            return new
-            {
-                module,
-                function = func,
-                weightMs = Math.Round(kv.Value, 1),
-                percent = totalWeight > 0 ? Math.Round(100 * kv.Value / totalWeight, 2) : 0
-            };
-        })
-        .ToList();
-
-    return new
+    private static string? GetSensorFunctionKey(ICpuSample sample, HashSet<string> sensorProcessNames)
     {
-        traceFile = Path.GetFileName(tracePath),
-        scenario = scenarioName,
-        sampleCount,
-        totalWeightMs = Math.Round(totalWeight, 1),
-        topProcesses,
-        topFunctions
-    };
-}
+        var stack = sample.Stack;
+        if (stack == null) return null;
 
-static string? GetFunctionKey(ICpuSample sample, HashSet<string> sensorProcessNames)
-{
-    // Prefer first frame in sensor module (our code); fall back to top frame (often OS)
-    var stack = sample.Stack;
-    if (stack != null)
-    {
+        // First pass: find deepest sensor-module frame with a resolved, non-third-party symbol
         foreach (var frame in stack.Frames)
         {
             var frameImage = frame.Image?.FileName;
             if (string.IsNullOrEmpty(frameImage)) continue;
             var frameModule = Path.GetFileNameWithoutExtension(frameImage);
             if (string.IsNullOrEmpty(frameModule)) frameModule = frameImage;
+            if (!sensorProcessNames.Contains(frameModule)) continue;
 
-            if (sensorProcessNames.Contains(frameModule))
+            if (frame.Symbol != null)
             {
-                return FormatFrame(frame, frameModule);
+                var funcName = frame.Symbol.FunctionName ?? frame.Symbol.ToString() ?? "?";
+                if (!IsThirdPartyFunction(funcName))
+                    return $"{frameModule}!{funcName}";
             }
         }
+
+        // Second pass: accept any sensor frame (even third-party or unresolved) as fallback
+        foreach (var frame in stack.Frames)
+        {
+            var frameImage = frame.Image?.FileName;
+            if (string.IsNullOrEmpty(frameImage)) continue;
+            var frameModule = Path.GetFileNameWithoutExtension(frameImage);
+            if (string.IsNullOrEmpty(frameModule)) frameModule = frameImage;
+            if (!sensorProcessNames.Contains(frameModule)) continue;
+
+            if (frame.Symbol != null)
+            {
+                var funcName = frame.Symbol.FunctionName ?? frame.Symbol.ToString() ?? "?";
+                return $"{frameModule}!{funcName}";
+            }
+            var hex = $"{frame.Address:X}";
+            var addr = hex.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? hex : "0x" + hex;
+            return $"{frameModule}!{addr}";
+        }
+
+        return null;
     }
 
-    // Fallback: use top frame (may be OS/infra)
-    return GetTopFrameKey(sample);
-}
-
-static string? GetTopFrameKey(ICpuSample sample)
-{
-    var topFrame = sample.TopStackFrame;
-    var topImage = sample.Image?.FileName ?? sample.Process?.ImageName ?? "unknown";
-    var topModule = Path.GetFileNameWithoutExtension(topImage);
-    if (string.IsNullOrEmpty(topModule)) topModule = topImage;
-    return FormatFrame(topFrame, topModule);
-}
-
-static string FormatFrame(Microsoft.Windows.EventTracing.Symbols.StackFrame frame, string module)
-{
-    if (frame.Symbol != null)
+    public static object ProcessTrace(string tracePath, string scenarioName, HashSet<string> sensorProcessNames, bool useSymbols, string? symbolPath, int topProcessesLimit = 10)
     {
-        var funcName = frame.Symbol.FunctionName ?? frame.Symbol.ToString() ?? "?";
-        return $"{module}!{funcName}";
-    }
-    var hex = $"{frame.Address:X}";
-    var addr = hex.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? hex : "0x" + hex;
-    return $"{module}+{addr}";
-}
+        var processWeights = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        var functionWeights = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        double totalWeight = 0;
+        int sampleCount = 0;
 
-static (string module, string function) SplitModuleFunction(string key)
-{
-    var idx = key.IndexOf('!');
-    if (idx >= 0)
-        return (key.Substring(0, idx), key.Substring(idx + 1));
-    idx = key.IndexOf('+');
-    if (idx >= 0)
-        return (key.Substring(0, idx), key.Substring(idx + 1));
-    return (key, "");
+        var settings = new TraceProcessorSettings { AllowLostEvents = true };
+
+        using (var trace = TraceProcessor.Create(tracePath, settings))
+        {
+            var pendingCpu = trace.UseCpuSamplingData();
+            IPendingResult<ISymbolDataSource>? pendingSymbols = useSymbols ? trace.UseSymbols() : null;
+
+            trace.Process();
+
+            var cpuData = pendingCpu.Result;
+            if (pendingSymbols != null)
+            {
+                var symbolData = pendingSymbols.Result;
+                if (!string.IsNullOrEmpty(symbolPath))
+                    Environment.SetEnvironmentVariable("_NT_SYMBOL_PATH", symbolPath, EnvironmentVariableTarget.Process);
+                symbolData.LoadSymbolsForConsoleAsync(SymCachePath.Automatic, SymbolPath.Automatic).GetAwaiter().GetResult();
+            }
+
+            foreach (var sample in cpuData.Samples)
+            {
+                if (sample.IsExecutingDeferredProcedureCall == true || sample.IsExecutingInterruptServicingRoutine == true)
+                    continue;
+
+                var weight = (double)sample.Weight.TotalMilliseconds;
+                totalWeight += weight;
+                sampleCount++;
+
+                var processName = sample.Process?.ImageName ?? sample.Image?.FileName ?? "Unknown";
+                var processBase = Path.GetFileNameWithoutExtension(processName);
+                if (string.IsNullOrEmpty(processBase)) processBase = processName;
+
+                processWeights.TryGetValue(processBase, out var pWeight);
+                processWeights[processBase] = pWeight + weight;
+
+                if (sensorProcessNames.Contains(processBase))
+                {
+                    var funcKey = GetSensorFunctionKey(sample, sensorProcessNames);
+                    if (funcKey != null)
+                    {
+                        functionWeights.TryGetValue(funcKey, out var fWeight);
+                        functionWeights[funcKey] = fWeight + weight;
+                    }
+                }
+            }
+        }
+
+        var processQuery = processWeights
+            .Where(kv => !string.Equals(kv.Key, "Idle", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(kv => kv.Value);
+        var topProcesses = (topProcessesLimit > 0 ? processQuery.Take(topProcessesLimit) : processQuery)
+            .Select(kv => new { process = kv.Key, weightMs = Math.Round(kv.Value, 1), percent = totalWeight > 0 ? Math.Round(100 * kv.Value / totalWeight, 2) : 0 })
+            .ToList();
+
+        var topFunctions = functionWeights
+            .OrderByDescending(kv => kv.Value)
+            .Take(50)
+            .Select(kv =>
+            {
+                var (module, func) = SplitModuleFunction(kv.Key);
+                return new
+                {
+                    module,
+                    function = func,
+                    weightMs = Math.Round(kv.Value, 1),
+                    percent = totalWeight > 0 ? Math.Round(100 * kv.Value / totalWeight, 2) : 0
+                };
+            })
+            .ToList();
+
+        return new
+        {
+            traceFile = Path.GetFileName(tracePath),
+            scenario = scenarioName,
+            sampleCount,
+            totalWeightMs = Math.Round(totalWeight, 1),
+            topProcesses,
+            topFunctions
+        };
+    }
+
+    private static (string module, string function) SplitModuleFunction(string key)
+    {
+        var idx = key.IndexOf('!');
+        if (idx >= 0)
+            return (key.Substring(0, idx), key.Substring(idx + 1));
+        idx = key.IndexOf('+');
+        if (idx >= 0)
+            return (key.Substring(0, idx), key.Substring(idx + 1));
+        return (key, "");
+    }
 }

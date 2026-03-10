@@ -58,11 +58,12 @@
 #>
 
 param(
-    [int]$PauseBetweenSeconds = 60,
+    [int]$PauseBetweenSeconds = -1,
     [string[]]$SkipScenarios = @(),
     [string[]]$OnlyScenarios = @(),
     [switch]$EnableProfiling,
-    [string[]]$ProfilingProfiles = @("GeneralProfile", "DiskIO")
+    [string[]]$ProfilingProfiles = @("GeneralProfile", "DiskIO"),
+    [switch]$LightMode
 )
 
 $ErrorActionPreference = "Stop"
@@ -163,6 +164,37 @@ foreach ($name in $AllScenarios.Keys) {
     if ($name -in $SkipScenarios) { continue }
     $scenariosToRun[$name] = $AllScenarios[$name]
 }
+
+# ---------- Light mode overrides ----------
+# Reduced workloads for small 2-core VMs where NNX + sensor saturate CPU.
+# Target: each scenario ~2-4 min, full suite < 90 min including pauses.
+if ($LightMode) {
+    $LightOverrides = @{
+        "idle_baseline"        = @{ Params = @{ DurationMinutes = 5 };                                               Description = "Idle baseline (5 min)" }
+        "registry_storm"       = @{ Params = @{ LoopCount = 200; Iterations = 10 };                                  Description = "Registry set/delete storm - light (~2 min)" }
+        "network_burst"        = @{ Params = @{ RequestCount = 50; Iterations = 10 };                                 Description = "HTTP request burst - light (~2 min)" }
+        "process_storm"        = @{ Params = @{ ProcessCount = 30; Bursts = 10 };                                     Description = "Rapid process spawn/terminate - light (~3 min)" }
+        "rpc_generation"       = @{ Params = @{ QueryCount = 100; Iterations = 10 };                                  Description = "WMI/RPC query loop - light (~2 min)" }
+        "service_cycle"        = @{ Params = @{ Cycles = 20 };                                                        Description = "Service create/start/stop/delete - light (~2 min)" }
+        "user_account_modify"  = @{ Params = @{ Cycles = 20 };                                                        Description = "User account create/modify/delete - light (~1 min)" }
+        "browser_streaming"    = @{ Params = @{ DurationSeconds = 180 };                                              Description = "Browser streaming session - light (3 min)" }
+        "driver_load"          = @{ Params = @{ Cycles = 3 };                                                         Description = "Driver load via Defender restart - light (~1 min)" }
+        "file_stress_loop"     = @{ Params = @{ LoopCount = 500; Iterations = 5 };                                    Description = "File create/rename/delete loop - light (~3 min)" }
+        "zip_extraction"       = @{ Params = @{ FileCount = 2000; Iterations = 3 };                                   Description = "ZIP extraction workload - light (~3 min)" }
+        "file_storm"           = @{ Params = @{ FileCount = 2000; Bursts = 5 };                                       Description = "Mass file create/modify/delete bursts - light (~3 min)" }
+        "combined_high_density" = @{ Params = @{ DurationSeconds = 300; FileLoopCount = 200; RegistryLoopCount = 200; NetworkRequestCount = 50 }; Description = "All generators in parallel - light (5 min)" }
+    }
+    foreach ($name in @($scenariosToRun.Keys)) {
+        if ($LightOverrides.ContainsKey($name)) {
+            $scenariosToRun[$name].Params = $LightOverrides[$name].Params
+            $scenariosToRun[$name].Description = $LightOverrides[$name].Description
+        }
+    }
+    if ($PauseBetweenSeconds -eq -1) { $PauseBetweenSeconds = 30 }
+    Write-Host "[LIGHT MODE] Reduced workloads for small VMs" -ForegroundColor Yellow
+}
+
+if ($PauseBetweenSeconds -eq -1) { $PauseBetweenSeconds = 60 }
 
 # ---------- Enable profiling if requested ----------
 $scriptDir = $PSScriptRoot

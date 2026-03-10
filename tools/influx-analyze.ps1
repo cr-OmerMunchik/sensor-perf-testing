@@ -250,6 +250,19 @@ foreach ($k in $totalCounts.Keys) {
     if ($field -eq "minionhost") { $uptimeMap[$hostName].minionhost_uptime = $pct }
     if ($field -eq "activeconsole") { $uptimeMap[$hostName].activeconsole_uptime = $pct }
 }
+# Restart counts: detect 0->1 transitions in sensor_liveness (process came back after being down)
+$restartQ = "from(bucket: `"telegraf`") |> range(start: $tr) |> filter(fn: (r) => r._measurement == `"sensor_liveness`") |> group(columns: [`"host`", `"_field`"]) |> sort(columns: [`"_time`"]) |> difference() |> filter(fn: (r) => r._value == 1) |> count() |> group() |> yield(name: `"restarts`")"
+$restartCounts = @{}
+foreach ($r in (Parse-Csv (Invoke-InfluxQuery $restartQ))) {
+    $k = "$($r.host)|$($r._field)"
+    $restartCounts[$k] = [int]($r._value)
+}
+foreach ($hostName in $uptimeMap.Keys) {
+    $mhKey = "$hostName|minionhost"
+    $acKey = "$hostName|activeconsole"
+    $uptimeMap[$hostName].minionhost_restarts = if ($restartCounts[$mhKey]) { $restartCounts[$mhKey] } else { 0 }
+    $uptimeMap[$hostName].activeconsole_restarts = if ($restartCounts[$acKey]) { $restartCounts[$acKey] } else { 0 }
+}
 $findings.sensorLivenessUptime = @($uptimeMap.Values)
 
 ### Driver Instances
