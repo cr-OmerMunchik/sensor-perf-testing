@@ -133,19 +133,19 @@ tr:nth-child(odd) { background: #fff; }
 
 if ($LightMode) {
     $script:ScenarioDescriptions = [ordered]@{
-        "idle_baseline"          = "Idle baseline - no workload running (5 min, light mode)"
-        "registry_storm"         = "Rapid registry key set/delete operations (200 keys x 10 iterations, light mode)"
-        "network_burst"          = "HTTP request burst to external endpoints (50 requests x 10 iterations, light mode)"
-        "process_storm"          = "Rapid process spawn and terminate cycles (30 processes x 10 bursts, light mode)"
-        "rpc_generation"         = "WMI/RPC query loop simulating management traffic (100 queries x 10 iterations, light mode)"
-        "service_cycle"          = "Windows service create/start/stop/delete cycle (20 cycles, light mode)"
-        "user_account_modify"    = "User account create/modify/delete cycle (20 cycles, light mode)"
-        "browser_streaming"      = "Browser streaming session simulation (3 minutes, light mode)"
-        "driver_load"            = "Driver load/unload via Defender restart (3 cycles, light mode)"
-        "file_stress_loop"       = "Continuous file create/rename/delete loop (500 files x 5 iterations, light mode)"
-        "zip_extraction"         = "ZIP extraction workload - archive with 2,000 files (3 iterations, light mode)"
-        "file_storm"             = "Mass file create/modify/delete in bursts (2,000 files x 5 bursts, light mode)"
-        "combined_high_density"  = "All workload generators running in parallel (5 minutes, light mode)"
+        "idle_baseline"          = "Idle baseline - no workload running (5 min)"
+        "registry_storm"         = "Rapid registry key set/delete operations (200 keys x 10 iterations)"
+        "network_burst"          = "HTTP request burst to external endpoints (50 requests x 10 iterations)"
+        "process_storm"          = "Rapid process spawn and terminate cycles (30 processes x 10 bursts)"
+        "rpc_generation"         = "WMI/RPC query loop simulating management traffic (100 queries x 10 iterations)"
+        "service_cycle"          = "Windows service create/start/stop/delete cycle (20 cycles)"
+        "user_account_modify"    = "User account create/modify/delete cycle (20 cycles)"
+        "browser_streaming"      = "Browser streaming session simulation (3 minutes)"
+        "driver_load"            = "Driver load/unload via Defender restart (3 cycles)"
+        "file_stress_loop"       = "Continuous file create/rename/delete loop (500 files x 5 iterations)"
+        "zip_extraction"         = "ZIP extraction workload - archive with 2,000 files (3 iterations)"
+        "file_storm"             = "Mass file create/modify/delete in bursts (2,000 files x 5 bursts)"
+        "combined_high_density"  = "All workload generators running in parallel (5 minutes)"
     }
 } else {
     $script:ScenarioDescriptions = [ordered]@{
@@ -259,9 +259,8 @@ $($script:SharedCss)
 </style>
 </head>
 <body>
-<h1>Cybereason Sensor Performance Report$(if ($LightMode) { ' (Light Mode)' })</h1>
+<h1>Cybereason Sensor Performance Report</h1>
 <p><strong>Generated:</strong> $genTime</p>
-$(if ($LightMode) { '<div class="callout" style="border-left: 4px solid #f39c12;"><strong>Light Mode:</strong> This report was generated using reduced workload parameters optimized for small 2-core VMs. Event counts and durations are significantly lower than the full test suite to prevent CPU saturation. Results reflect relative performance differences between versions under moderate load.</div>' })
 "@)
 
     # Test start/end/duration

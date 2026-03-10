@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -36,9 +36,8 @@ tr:nth-child(odd) { background: #fff; }
 </style>
 </head>
 <body>
-<h1>Cybereason Sensor Performance Report (Light Mode)</h1>
+<h1>Cybereason Sensor Performance Report</h1>
 <p><strong>Generated:</strong> 2026-03-10 00:59:41</p>
-<div class="callout" style="border-left: 4px solid #f39c12;"><strong>Light Mode:</strong> This report was generated using reduced workload parameters optimized for small 2-core VMs. Event counts and durations are significantly lower than the full test suite to prevent CPU saturation. Results reflect relative performance differences between versions under moderate load.</div>
 <p><strong>Test Start:</strong> 2026-03-10 00:11 &nbsp;|&nbsp; <strong>Test End:</strong> 2026-03-10 00:58 &nbsp;|&nbsp; <strong>Duration:</strong> 0h 47m</p>
 <p><strong>Scope:</strong> Small VMs &mdash; S1: No Sensor Baseline, S2: V26.1+Phoenix, S3: V26.1+Legacy, S4: V24.1+Legacy</p>
 <h2>Test Environment</h2>
@@ -50,19 +49,19 @@ tr:nth-child(odd) { background: #fff; }
 </table>
 <h2>Test Scenarios</h2>
 <table><tr><th>#</th><th>Scenario Name</th><th>Description</th></tr>
-<tr><td>1</td><td><code>idle_baseline</code></td><td>Idle baseline - no workload running (5 min, light mode)</td></tr>
-<tr><td>2</td><td><code>registry_storm</code></td><td>Rapid registry key set/delete operations (200 keys x 10 iterations, light mode)</td></tr>
-<tr><td>3</td><td><code>network_burst</code></td><td>HTTP request burst to external endpoints (50 requests x 10 iterations, light mode)</td></tr>
-<tr><td>4</td><td><code>process_storm</code></td><td>Rapid process spawn and terminate cycles (30 processes x 10 bursts, light mode)</td></tr>
-<tr><td>5</td><td><code>rpc_generation</code></td><td>WMI/RPC query loop simulating management traffic (100 queries x 10 iterations, light mode)</td></tr>
-<tr><td>6</td><td><code>service_cycle</code></td><td>Windows service create/start/stop/delete cycle (20 cycles, light mode)</td></tr>
-<tr><td>7</td><td><code>user_account_modify</code></td><td>User account create/modify/delete cycle (20 cycles, light mode)</td></tr>
-<tr><td>8</td><td><code>browser_streaming</code></td><td>Browser streaming session simulation (3 minutes, light mode)</td></tr>
-<tr><td>9</td><td><code>driver_load</code></td><td>Driver load/unload via Defender restart (3 cycles, light mode)</td></tr>
-<tr><td>10</td><td><code>file_stress_loop</code></td><td>Continuous file create/rename/delete loop (500 files x 5 iterations, light mode)</td></tr>
-<tr><td>11</td><td><code>zip_extraction</code></td><td>ZIP extraction workload - archive with 2,000 files (3 iterations, light mode)</td></tr>
-<tr><td>12</td><td><code>file_storm</code></td><td>Mass file create/modify/delete in bursts (2,000 files x 5 bursts, light mode)</td></tr>
-<tr><td>13</td><td><code>combined_high_density</code></td><td>All workload generators running in parallel (5 minutes, light mode)</td></tr>
+<tr><td>1</td><td><code>idle_baseline</code></td><td>Idle baseline - no workload running (5 min)</td></tr>
+<tr><td>2</td><td><code>registry_storm</code></td><td>Rapid registry key set/delete operations (200 keys x 10 iterations)</td></tr>
+<tr><td>3</td><td><code>network_burst</code></td><td>HTTP request burst to external endpoints (50 requests x 10 iterations)</td></tr>
+<tr><td>4</td><td><code>process_storm</code></td><td>Rapid process spawn and terminate cycles (30 processes x 10 bursts)</td></tr>
+<tr><td>5</td><td><code>rpc_generation</code></td><td>WMI/RPC query loop simulating management traffic (100 queries x 10 iterations)</td></tr>
+<tr><td>6</td><td><code>service_cycle</code></td><td>Windows service create/start/stop/delete cycle (20 cycles)</td></tr>
+<tr><td>7</td><td><code>user_account_modify</code></td><td>User account create/modify/delete cycle (20 cycles)</td></tr>
+<tr><td>8</td><td><code>browser_streaming</code></td><td>Browser streaming session simulation (3 minutes)</td></tr>
+<tr><td>9</td><td><code>driver_load</code></td><td>Driver load/unload via Defender restart (3 cycles)</td></tr>
+<tr><td>10</td><td><code>file_stress_loop</code></td><td>Continuous file create/rename/delete loop (500 files x 5 iterations)</td></tr>
+<tr><td>11</td><td><code>zip_extraction</code></td><td>ZIP extraction workload - archive with 2,000 files (3 iterations)</td></tr>
+<tr><td>12</td><td><code>file_storm</code></td><td>Mass file create/modify/delete in bursts (2,000 files x 5 bursts)</td></tr>
+<tr><td>13</td><td><code>combined_high_density</code></td><td>All workload generators running in parallel (5 minutes)</td></tr>
 </table>
 <div class="summary-box summary-warn">
 <strong>About N/A values in this report:</strong> Cells marked <span class="na-cell" style="padding: 2px 6px;">N/A</span> indicate that the scenario did not complete on that host, so no data was collected. Some sensor hosts may not complete file-heavy scenarios (<code>file_stress_loop</code>, <code>file_storm</code>, <code>zip_extraction</code>, <code>combined_high_density</code>) because the <strong>Nnx component</strong> (a file-monitoring process present in all sensor versions) can cause extreme CPU load during file-heavy tests, leaving insufficient CPU for the test harness to complete within the allotted time.
