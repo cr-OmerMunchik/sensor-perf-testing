@@ -1,0 +1,182 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ETL Trace Analysis Report</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #fff; color: #333; margin: 20px; max-width: 1400px; }
+h1 { color: #2980b9; border-bottom: 2px solid #2980b9; padding-bottom: 8px; }
+h2 { color: #2980b9; border-left: 4px solid #2980b9; padding-left: 12px; margin-top: 28px; }
+h3 { color: #34495e; margin-top: 20px; }
+table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+th, td { border: 1px solid #bdc3c7; padding: 6px 10px; text-align: left; }
+th { background: #ecf0f1; font-weight: 600; }
+tr:nth-child(even) { background: #f8f9fa; }
+tr:nth-child(odd) { background: #fff; }
+.numeric { font-family: 'Consolas', 'Monaco', monospace; }
+.summary-box { padding: 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid; }
+.summary-ok { background: #e8f8f5; border-color: #27ae60; }
+.summary-warn { background: #fef9e7; border-color: #f39c12; }
+.summary-crit { background: #fdedec; border-color: #e74c3c; }
+.callout { background: #ebf5fb; border-left: 4px solid #2980b9; padding: 12px 16px; margin: 16px 0; }
+.highlight-row { background: #fef9e7 !important; border: 2px solid #f39c12; }
+.worst-s2-row { background: #fdedec !important; border: 2px solid #e74c3c; font-weight: bold; }
+.vm-separator { border-left: 3px solid #2980b9 !important; }
+.bottom-line { background: #fdf2e9; border-left: 4px solid #e67e22; padding: 16px; margin: 16px 0; }
+.finding { margin-bottom: 10px; }
+.finding strong { color: #2c3e50; }
+.na-cell { background: #ecf0f1 !important; color: #7f8c8d !important; font-style: italic; cursor: help; }
+.total-row td { border-top: 2px solid #2c3e50; font-weight: bold; background: #ebedef !important; }
+.group-header th { text-align: center; font-size: 14px; font-weight: 700; }
+.sub-header th { text-align: center; font-size: 11px; font-weight: 600; background: #dde4e6; }
+.cpu-cell { font-family: 'Consolas', monospace; text-align: right; }
+.mem-cell { font-family: 'Consolas', monospace; text-align: right; }
+@media print { body { margin: 10px; } .no-print { display: none; } }
+</style>
+</head>
+<body>
+<h1>ETL Trace Analysis (CPU Hotspots)</h1>
+<p><strong>Generated:</strong> 2026-03-11 09:57:57</p>
+<p>ETL profiling analysis for the heaviest scenarios. Shows which processes and functions consumed the most CPU during the trace.</p>
+<h2>Trace Summary</h2>
+<table>
+<tr><th>Property</th><th>Value</th></tr>
+<tr><td>Host</td><td>TEST-PERF-S2 (V26.1 + Phoenix)</td></tr>
+<tr><td>Scenarios</td><td>combined_high_density, file_stress_loop, network_burst, process_storm, registry_storm (5 total)</td></tr>
+<tr><td>Total CPU Samples</td><td>767,396</td></tr>
+<tr><td>Total CPU Weight</td><td>764s (12.7 min across all cores)</td></tr>
+</table>
+<div class="callout"><strong>How to read this report:</strong> CPU samples from <strong>5 scenarios</strong> are aggregated into unified tables. Each percentage represents the fraction of <em>total system CPU capacity</em> across all cores and all traces combined. On a 2-core machine, 100% = both cores fully utilized for the entire combined duration. This gives a holistic view of CPU consumption across diverse workload types.</div>
+<h2>Sensor Processes (Cybereason)</h2>
+<table><tr><th>Process</th><th>CPU time (ms)</th><th>% of Total CPU</th></tr>
+<tr><td><strong>ActiveConsole</strong></td><td class="numeric">152,304.7</td><td class="numeric">19.929%</td></tr>
+<tr><td><strong>Nnx</strong></td><td class="numeric">23,302.7</td><td class="numeric">3.049%</td></tr>
+<tr><td><strong>minionhost</strong></td><td class="numeric">22,196.5</td><td class="numeric">2.904%</td></tr>
+<tr><td><strong>ExecutionPreventionSvc</strong></td><td class="numeric">10,200.3</td><td class="numeric">1.335%</td></tr>
+<tr><td><strong>AmSvc</strong></td><td class="numeric">1,392.2</td><td class="numeric">0.182%</td></tr>
+<tr><td><strong>CrAmTray</strong></td><td class="numeric">143.7</td><td class="numeric">0.019%</td></tr>
+<tr><td><strong>PylumLoader</strong></td><td class="numeric">82.8</td><td class="numeric">0.011%</td></tr>
+<tr class="total-row"><td><strong>Total Sensor CPU</strong></td><td class="numeric">209,622.9</td><td class="numeric">27.43%</td></tr>
+</table>
+<h2>Other System Processes</h2>
+<table><tr><th>Process</th><th>CPU time (ms)</th><th>% of Total CPU</th></tr>
+<tr><td>powershell</td><td class="numeric">251,267.6</td><td class="numeric">32.879%</td></tr>
+<tr><td>svchost</td><td class="numeric">57,793.5</td><td class="numeric">7.562%</td></tr>
+<tr><td>Taskmgr</td><td class="numeric">20,380.4</td><td class="numeric">2.667%</td></tr>
+<tr><td>conhost</td><td class="numeric">13,396.4</td><td class="numeric">1.753%</td></tr>
+<tr><td>WmiPrvSE</td><td class="numeric">12,548.1</td><td class="numeric">1.642%</td></tr>
+<tr><td>lsass</td><td class="numeric">8,969.6</td><td class="numeric">1.174%</td></tr>
+<tr><td>explorer</td><td class="numeric">7,950.1</td><td class="numeric">1.04%</td></tr>
+<tr><td>System</td><td class="numeric">6,302.8</td><td class="numeric">0.825%</td></tr>
+<tr><td>services</td><td class="numeric">3,288.7</td><td class="numeric">0.43%</td></tr>
+<tr><td>telegraf</td><td class="numeric">2,286.7</td><td class="numeric">0.299%</td></tr>
+<tr><td>cmd</td><td class="numeric">1,931.5</td><td class="numeric">0.253%</td></tr>
+<tr><td>dwm</td><td class="numeric">1,814.7</td><td class="numeric">0.237%</td></tr>
+<tr><td>timeout</td><td class="numeric">1,813.5</td><td class="numeric">0.237%</td></tr>
+<tr><td>wpr</td><td class="numeric">1,609.9</td><td class="numeric">0.211%</td></tr>
+<tr><td>csrss</td><td class="numeric">1,295.3</td><td class="numeric">0.169%</td></tr>
+<tr><td>vmtoolsd</td><td class="numeric">1,006.1</td><td class="numeric">0.132%</td></tr>
+<tr><td>notepad++</td><td class="numeric">953.6</td><td class="numeric">0.125%</td></tr>
+<tr><td>SearchIndexer</td><td class="numeric">426.6</td><td class="numeric">0.056%</td></tr>
+<tr><td>MemCompression</td><td class="numeric">392.9</td><td class="numeric">0.051%</td></tr>
+<tr><td>sihost</td><td class="numeric">386.7</td><td class="numeric">0.051%</td></tr>
+<tr><td>MicrosoftEdgeUpdate</td><td class="numeric">273.3</td><td class="numeric">0.036%</td></tr>
+<tr><td>rdpclip</td><td class="numeric">248.1</td><td class="numeric">0.032%</td></tr>
+<tr><td>WUDFHost</td><td class="numeric">215.3</td><td class="numeric">0.028%</td></tr>
+<tr><td>backgroundTaskHost</td><td class="numeric">199.3</td><td class="numeric">0.026%</td></tr>
+<tr><td>msedgewebview2</td><td class="numeric">55.8</td><td class="numeric">0.007%</td></tr>
+<tr><td>LogonUI</td><td class="numeric">12.0</td><td class="numeric">0.002%</td></tr>
+</table>
+<h2>Function-Level Hotspots</h2>
+<div class="callout"><strong>What this shows:</strong> Top CPU-consuming functions within Cybereason sensor modules, resolved from PDB symbol files. Each function''s weight is the sum of its CPU samples across all scenarios. OS and third-party functions are excluded.</div>
+<table><tr><th>#</th><th>Module</th><th>Function</th><th>CPU time (ms)</th><th>% of Total CPU</th><th>Seen in</th></tr>
+<tr><td>1</td><td><strong>ActiveConsole</strong></td><td><code>CorrelationDbConnection::executeUpdateQuery<std::basic_string<char,std::char_traits<char>,std::allocator<char> >,std::basic_string<char,std::char_traits<char>,std::allocator<char> > ></code></td><td class="numeric">36,062.3</td><td class="numeric">4.719%</td><td class="numeric">2/5</td></tr>
+<tr><td>2</td><td><strong>ActiveConsole</strong></td><td><code>PxMessages::SetEventCommonData</code></td><td class="numeric">36,007.0</td><td class="numeric">4.712%</td><td class="numeric">5/5</td></tr>
+<tr><td>3</td><td><strong>ActiveConsole</strong></td><td><code>CorrelationDbConnection::executeSelectQuery<__int64,__int64></code></td><td class="numeric">8,290.6</td><td class="numeric">1.085%</td><td class="numeric">5/5</td></tr>
+<tr><td>4</td><td><strong>ActiveConsole</strong></td><td><code>CorrelationDbConnection::executeUpdateQuery<__int64></code></td><td class="numeric">8,125.9</td><td class="numeric">1.063%</td><td class="numeric">5/5</td></tr>
+<tr><td>5</td><td><strong>ExecutionPreventionSvc</strong></td><td><code>ExecutionPreventionService::scanFile</code></td><td class="numeric">4,486.2</td><td class="numeric">0.587%</td><td class="numeric">5/5</td></tr>
+<tr><td>6</td><td><strong>Nnx</strong></td><td><code>kernel::IoControlAction::IoControlAction</code></td><td class="numeric">4,308.1</td><td class="numeric">0.564%</td><td class="numeric">5/5</td></tr>
+<tr><td>7</td><td><strong>ActiveConsole</strong></td><td><code>CorrelationDbConnection::collectQueryData</code></td><td class="numeric">3,373.1</td><td class="numeric">0.441%</td><td class="numeric">5/5</td></tr>
+<tr><td>8</td><td><strong>Nnx</strong></td><td><code>Cyber::Yara::Matcher::scan</code></td><td class="numeric">3,364.2</td><td class="numeric">0.44%</td><td class="numeric">5/5</td></tr>
+<tr><td>9</td><td><strong>Nnx</strong></td><td><code>kernel::IoControlAction::getResult</code></td><td class="numeric">2,432.6</td><td class="numeric">0.318%</td><td class="numeric">5/5</td></tr>
+<tr><td>10</td><td><strong>Nnx</strong></td><td><code>kernel::IoControlAction::~IoControlAction</code></td><td class="numeric">834.0</td><td class="numeric">0.109%</td><td class="numeric">5/5</td></tr>
+<tr><td>11</td><td><strong>Nnx</strong></td><td><code>NonThreadSafeCache<ProcessKey,Cyber::ExpirableDataStructure::Expirable<std::shared_ptr<ProcessDetails> >,0,0>::Iterator::updateKeyValuePair</code></td><td class="numeric">775.8</td><td class="numeric">0.102%</td><td class="numeric">5/5</td></tr>
+<tr><td>12</td><td><strong>ExecutionPreventionSvc</strong></td><td><code>kernel::IoControlAction::IoControlAction</code></td><td class="numeric">716.7</td><td class="numeric">0.094%</td><td class="numeric">5/5</td></tr>
+<tr><td>13</td><td><strong>minionhost</strong></td><td><code>TrayKeepAliveTask::handler</code></td><td class="numeric">713.6</td><td class="numeric">0.093%</td><td class="numeric">5/5</td></tr>
+<tr><td>14</td><td><strong>Nnx</strong></td><td><code>Cyber::Arw::Tracker::ReplacedFile::getSimilarPathForDelete</code></td><td class="numeric">701.4</td><td class="numeric">0.092%</td><td class="numeric">1/5</td></tr>
+<tr><td>15</td><td><strong>ActiveConsole</strong></td><td><code>CorrelationDbConnection::executeUpdateQuery<__int64,__int64></code></td><td class="numeric">605.5</td><td class="numeric">0.079%</td><td class="numeric">2/5</td></tr>
+<tr><td>16</td><td><strong>AmSvc</strong></td><td><code>FileScannerAtt::FileScannerAtt</code></td><td class="numeric">577.1</td><td class="numeric">0.076%</td><td class="numeric">5/5</td></tr>
+<tr><td>17</td><td><strong>ActiveConsole</strong></td><td><code>LoadedModuleEventsTableProcessor::makeEvent</code></td><td class="numeric">540.4</td><td class="numeric">0.071%</td><td class="numeric">5/5</td></tr>
+<tr><td>18</td><td><strong>Nnx</strong></td><td><code>Cyber::Arw::Tracker::ReplacedFile::getSimilarPathForCreate</code></td><td class="numeric">535.9</td><td class="numeric">0.07%</td><td class="numeric">1/5</td></tr>
+<tr><td>19</td><td><strong>ExecutionPreventionSvc</strong></td><td><code>kernel::IoControlAction::getResult</code></td><td class="numeric">530.7</td><td class="numeric">0.069%</td><td class="numeric">5/5</td></tr>
+<tr><td>20</td><td><strong>Nnx</strong></td><td><code>Cyber::Boss::FuzzygramScanner::findPotentialMatches</code></td><td class="numeric">513.5</td><td class="numeric">0.067%</td><td class="numeric">5/5</td></tr>
+<tr><td>21</td><td><strong>Nnx</strong></td><td><code><lambda_5a811f489d71d7772de54e035eb78b88>::operator()</code></td><td class="numeric">476.1</td><td class="numeric">0.062%</td><td class="numeric">1/5</td></tr>
+<tr><td>22</td><td><strong>Nnx</strong></td><td><code>Cyber::Concurrency::MTProducer<Cyber::Variant::Payload::MemoryAccessInfo,0>::activator</code></td><td class="numeric">458.9</td><td class="numeric">0.06%</td><td class="numeric">5/5</td></tr>
+<tr><td>23</td><td><strong>ActiveConsole</strong></td><td><code>PxMessages::SetHashData</code></td><td class="numeric">411.8</td><td class="numeric">0.054%</td><td class="numeric">5/5</td></tr>
+<tr><td>24</td><td><strong>Nnx</strong></td><td><code>Cyber::Concurrency::MTProducer<Cyber::Variant::Payload::MemoryAccessInfo,0>::push</code></td><td class="numeric">339.9</td><td class="numeric">0.044%</td><td class="numeric">5/5</td></tr>
+<tr><td>25</td><td><strong>minionhost</strong></td><td><code>ThreadStatCollector::collect</code></td><td class="numeric">285.1</td><td class="numeric">0.037%</td><td class="numeric">5/5</td></tr>
+<tr><td>26</td><td><strong>Nnx</strong></td><td><code>Cyber::Arw::FileStateMachine::onEvent</code></td><td class="numeric">278.9</td><td class="numeric">0.036%</td><td class="numeric">5/5</td></tr>
+<tr><td>27</td><td><strong>ActiveConsole</strong></td><td><code>Cyber::Hash::HashChecksum<20>::toString</code></td><td class="numeric">257.3</td><td class="numeric">0.034%</td><td class="numeric">5/5</td></tr>
+<tr><td>28</td><td><strong>Nnx</strong></td><td><code>Callbacks::CallbacksRegistration<void __cdecl(enum Events::EventTypes,std::shared_ptr<Events::EventBase> &),enum Events::EventTypes,21>::CallbacksRegistrationManager::getCallback</code></td><td class="numeric">232.7</td><td class="numeric">0.03%</td><td class="numeric">5/5</td></tr>
+<tr><td>29</td><td><strong>ActiveConsole</strong></td><td><code>ResultSet::~ResultSet</code></td><td class="numeric">221.5</td><td class="numeric">0.029%</td><td class="numeric">5/5</td></tr>
+<tr><td>30</td><td><strong>Nnx</strong></td><td><code>PEUtils::getFileVersionInfo</code></td><td class="numeric">209.5</td><td class="numeric">0.027%</td><td class="numeric">1/5</td></tr>
+<tr><td>31</td><td><strong>ExecutionPreventionSvc</strong></td><td><code>WhiteList::foundInList</code></td><td class="numeric">194.7</td><td class="numeric">0.025%</td><td class="numeric">4/5</td></tr>
+<tr><td>32</td><td><strong>ActiveConsole</strong></td><td><code>ResultSet::getColumnIndex</code></td><td class="numeric">177.3</td><td class="numeric">0.023%</td><td class="numeric">5/5</td></tr>
+<tr><td>33</td><td><strong>ExecutionPreventionSvc</strong></td><td><code>kernel::IoControlAction::~IoControlAction</code></td><td class="numeric">155.9</td><td class="numeric">0.02%</td><td class="numeric">4/5</td></tr>
+<tr><td>34</td><td><strong>Nnx</strong></td><td><code>CrDrvFileOperationAPI::getFileOperation</code></td><td class="numeric">138.7</td><td class="numeric">0.018%</td><td class="numeric">4/5</td></tr>
+<tr><td>35</td><td><strong>Nnx</strong></td><td><code><lambda_a7298fb7c267812787be1af659e7fdfd>::operator()</code></td><td class="numeric">132.8</td><td class="numeric">0.017%</td><td class="numeric">4/5</td></tr>
+<tr><td>36</td><td><strong>Nnx</strong></td><td><code>Callbacks::CallbacksRegistration<void __cdecl(std::shared_ptr<CrDrvFileOperationEventWrapper>),enum CrDrvFileOperationCallbacks::FileOperationEvent,10>::CallbacksRegistrationManager::getCallback</code></td><td class="numeric">132.7</td><td class="numeric">0.017%</td><td class="numeric">5/5</td></tr>
+<tr><td>37</td><td><strong>Nnx</strong></td><td><code>Cyber::NnxDataManager::ProcessTable::findImpl</code></td><td class="numeric">130.5</td><td class="numeric">0.017%</td><td class="numeric">5/5</td></tr>
+<tr><td>38</td><td><strong>ActiveConsole</strong></td><td><code>`anonymous namespace'::debugCallback</code></td><td class="numeric">123.6</td><td class="numeric">0.016%</td><td class="numeric">1/5</td></tr>
+<tr><td>39</td><td><strong>Nnx</strong></td><td><code>Cyber::Variant::Payload::Vpp::onMemoryAccessCallback</code></td><td class="numeric">117.5</td><td class="numeric">0.015%</td><td class="numeric">4/5</td></tr>
+<tr><td>40</td><td><strong>ActiveConsole</strong></td><td><code>google::protobuf::internal::ArenaStringPtr::ClearToEmpty</code></td><td class="numeric">113.0</td><td class="numeric">0.015%</td><td class="numeric">4/5</td></tr>
+<tr><td>41</td><td><strong>ActiveConsole</strong></td><td><code>MessageProcessor::processMessageBatch</code></td><td class="numeric">106.6</td><td class="numeric">0.014%</td><td class="numeric">1/5</td></tr>
+<tr><td>42</td><td><strong>minionhost</strong></td><td><code>NnxManagementService::monitorState</code></td><td class="numeric">98.9</td><td class="numeric">0.013%</td><td class="numeric">4/5</td></tr>
+<tr><td>43</td><td><strong>Nnx</strong></td><td><code>kernel::FileOperationsFeature::getFileOperation</code></td><td class="numeric">97.8</td><td class="numeric">0.013%</td><td class="numeric">3/5</td></tr>
+<tr><td>44</td><td><strong>Nnx</strong></td><td><code>robin_hood::detail::Table<1,80,unsigned int,std::pair<unsigned int,unsigned short>,robin_hood::hash<unsigned int,void>,std::equal_to<unsigned int> >::at<std::pair<unsigned int,unsigned short> ></code></td><td class="numeric">95.5</td><td class="numeric">0.012%</td><td class="numeric">4/5</td></tr>
+<tr><td>45</td><td><strong>ActiveConsole</strong></td><td><code>PxMessages::CreateEntityId</code></td><td class="numeric">93.0</td><td class="numeric">0.012%</td><td class="numeric">4/5</td></tr>
+<tr><td>46</td><td><strong>Nnx</strong></td><td><code>Cyber::Variant::File::Vfp::onModuleMapEvent</code></td><td class="numeric">92.9</td><td class="numeric">0.012%</td><td class="numeric">4/5</td></tr>
+<tr><td>47</td><td><strong>ActiveConsole</strong></td><td><code>google::protobuf::util::converter::DefaultValueObjectWriter::Node::PopulateChildren</code></td><td class="numeric">86.7</td><td class="numeric">0.011%</td><td class="numeric">2/5</td></tr>
+<tr><td>48</td><td><strong>ActiveConsole</strong></td><td><code>CorrelationDbConnection::executeUpdateQuery</code></td><td class="numeric">78.2</td><td class="numeric">0.01%</td><td class="numeric">2/5</td></tr>
+<tr><td>49</td><td><strong>ActiveConsole</strong></td><td><code>parseCommandLineArgs</code></td><td class="numeric">72.6</td><td class="numeric">0.009%</td><td class="numeric">3/5</td></tr>
+<tr><td>50</td><td><strong>ExecutionPreventionSvc</strong></td><td><code>FileHashCache::checkCacheResult</code></td><td class="numeric">65.7</td><td class="numeric">0.009%</td><td class="numeric">3/5</td></tr>
+<tr><td>51</td><td><strong>Nnx</strong></td><td><code>Cyber::Concurrency::MTProducer<Cyber::Variant::File::ResponseContent,0>::push</code></td><td class="numeric">64.7</td><td class="numeric">0.008%</td><td class="numeric">3/5</td></tr>
+<tr><td>52</td><td><strong>ActiveConsole</strong></td><td><code>ReportingModule::publishEventBatch</code></td><td class="numeric">64.0</td><td class="numeric">0.008%</td><td class="numeric">1/5</td></tr>
+<tr><td>53</td><td><strong>ActiveConsole</strong></td><td><code>ReportingModule::createEventBatches</code></td><td class="numeric">63.8</td><td class="numeric">0.008%</td><td class="numeric">1/5</td></tr>
+<tr><td>54</td><td><strong>ActiveConsole</strong></td><td><code>PxMessages::SetFileMetaData</code></td><td class="numeric">56.9</td><td class="numeric">0.007%</td><td class="numeric">4/5</td></tr>
+<tr><td>55</td><td><strong>Nnx</strong></td><td><code>Cyber::Concurrency::MTProducer<Cyber::Variant::File::ResponseContent,0>::activator</code></td><td class="numeric">54.9</td><td class="numeric">0.007%</td><td class="numeric">3/5</td></tr>
+<tr><td>56</td><td><strong>Nnx</strong></td><td><code>CrDrvFileOperationCallbacks::handleEvent</code></td><td class="numeric">50.9</td><td class="numeric">0.007%</td><td class="numeric">3/5</td></tr>
+<tr><td>57</td><td><strong>ActiveConsole</strong></td><td><code>ProcessTableProcessor::createProcessStartedPxMessage</code></td><td class="numeric">46.0</td><td class="numeric">0.006%</td><td class="numeric">1/5</td></tr>
+<tr><td>58</td><td><strong>AmSvc</strong></td><td><code>OnAccess::GzCbkScanObject</code></td><td class="numeric">39.9</td><td class="numeric">0.005%</td><td class="numeric">2/5</td></tr>
+<tr><td>59</td><td><strong>Nnx</strong></td><td><code>RulesEngine::ContainsStringFilter<ProcessPipeline::ProcessCreationEvent,0,0>::handleMessage</code></td><td class="numeric">38.9</td><td class="numeric">0.005%</td><td class="numeric">1/5</td></tr>
+<tr><td>60</td><td><strong>Nnx</strong></td><td><code>Cyber::Arw::ArwProcessDetails::ArwProcessDetails</code></td><td class="numeric">37.9</td><td class="numeric">0.005%</td><td class="numeric">1/5</td></tr>
+<tr><td>61</td><td><strong>ActiveConsole</strong></td><td><code>Cyber::Hash::HasherBase::getContext</code></td><td class="numeric">30.8</td><td class="numeric">0.004%</td><td class="numeric">2/5</td></tr>
+<tr><td>62</td><td><strong>ActiveConsole</strong></td><td><code>google::protobuf::internal::MergeFromImpl<0></code></td><td class="numeric">29.9</td><td class="numeric">0.004%</td><td class="numeric">1/5</td></tr>
+<tr><td>63</td><td><strong>ActiveConsole</strong></td><td><code>PxMessages::SetUserData</code></td><td class="numeric">28.0</td><td class="numeric">0.004%</td><td class="numeric">2/5</td></tr>
+<tr><td>64</td><td><strong>Nnx</strong></td><td><code>Events::EventHandler<std::shared_ptr<Events::EventBase> __cdecl(void),void __cdecl(enum Events::EventTypes,std::shared_ptr<Events::EventBase> &),void __cdecl(void),void __cdecl(void),100>::handlerCallback</code></td><td class="numeric">26.9</td><td class="numeric">0.004%</td><td class="numeric">1/5</td></tr>
+<tr><td>65</td><td><strong>minionhost</strong></td><td><code>CounterCollector::collect</code></td><td class="numeric">26.7</td><td class="numeric">0.003%</td><td class="numeric">2/5</td></tr>
+<tr><td>66</td><td><strong>ActiveConsole</strong></td><td><code>BaseTableProcessor::setProcessDataRecursive</code></td><td class="numeric">26.0</td><td class="numeric">0.003%</td><td class="numeric">2/5</td></tr>
+<tr><td>67</td><td><strong>Nnx</strong></td><td><code>Cyber::Boss::KmerCounter::enter</code></td><td class="numeric">23.0</td><td class="numeric">0.003%</td><td class="numeric">2/5</td></tr>
+<tr><td>68</td><td><strong>PylumLoader</strong></td><td><code>0x00000000009BE27A</code></td><td class="numeric">21.9</td><td class="numeric">0.003%</td><td class="numeric">2/5</td></tr>
+<tr><td>69</td><td><strong>Nnx</strong></td><td><code>Callbacks::CallbacksRegistration<void __cdecl(enum Events::EventTypes,std::shared_ptr<Events::EventBase> &),enum Events::EventTypes,21>::execute<std::shared_ptr<Events::EventBase> &></code></td><td class="numeric">20.0</td><td class="numeric">0.003%</td><td class="numeric">1/5</td></tr>
+<tr><td>70</td><td><strong>Nnx</strong></td><td><code>Cyber::Variant::File::eventToDosPath</code></td><td class="numeric">19.0</td><td class="numeric">0.002%</td><td class="numeric">1/5</td></tr>
+<tr><td>71</td><td><strong>Nnx</strong></td><td><code>ScopedPerfCounter::~ScopedPerfCounter</code></td><td class="numeric">18.0</td><td class="numeric">0.002%</td><td class="numeric">1/5</td></tr>
+<tr><td>72</td><td><strong>Nnx</strong></td><td><code>ScopedResourceLocker<std::basic_string<wchar_t,std::char_traits<wchar_t>,std::allocator<wchar_t> > >::ScopedResourceLocker<std::basic_string<wchar_t,std::char_traits<wchar_t>,std::allocator<wchar_t> > ></code></td><td class="numeric">18.0</td><td class="numeric">0.002%</td><td class="numeric">1/5</td></tr>
+<tr><td>73</td><td><strong>ExecutionPreventionSvc</strong></td><td><code>kernel::ExecutionPrevention::getInvalidationPaths</code></td><td class="numeric">17.0</td><td class="numeric">0.002%</td><td class="numeric">1/5</td></tr>
+<tr><td>74</td><td><strong>ActiveConsole</strong></td><td><code>EventBatcher::publishBatch</code></td><td class="numeric">17.0</td><td class="numeric">0.002%</td><td class="numeric">1/5</td></tr>
+<tr><td>75</td><td><strong>Nnx</strong></td><td><code>Cyber::Arw::FileStateMachine::onPostFileCreate</code></td><td class="numeric">17.0</td><td class="numeric">0.002%</td><td class="numeric">1/5</td></tr>
+<tr><td>76</td><td><strong>Nnx</strong></td><td><code>Cyber::Arw::FileStateMachine::getExtension</code></td><td class="numeric">17.0</td><td class="numeric">0.002%</td><td class="numeric">1/5</td></tr>
+<tr><td>77</td><td><strong>ActiveConsole</strong></td><td><code>OBJ_NAME_get</code></td><td class="numeric">14.0</td><td class="numeric">0.002%</td><td class="numeric">1/5</td></tr>
+<tr><td>78</td><td><strong>Nnx</strong></td><td><code>Cyber::Boss::KmerCounter::leave</code></td><td class="numeric">13.0</td><td class="numeric">0.002%</td><td class="numeric">1/5</td></tr>
+<tr><td>79</td><td><strong>ActiveConsole</strong></td><td><code>ResultSet::getValueAs<std::basic_string<char,std::char_traits<char>,std::allocator<char> > ></code></td><td class="numeric">12.9</td><td class="numeric">0.002%</td><td class="numeric">1/5</td></tr>
+<tr><td>80</td><td><strong>minionhost</strong></td><td><code>google::protobuf::MessageLite::AppendPartialToString</code></td><td class="numeric">8.0</td><td class="numeric">0.001%</td><td class="numeric">1/5</td></tr>
+<tr><td>81</td><td><strong>ActiveConsole</strong></td><td><code>mqtt::unsubscribe_response::unsubscribe_response</code></td><td class="numeric">5.0</td><td class="numeric">0.001%</td><td class="numeric">1/5</td></tr>
+<tr><td>82</td><td><strong>ActiveConsole</strong></td><td><code>deflateSetHeader</code></td><td class="numeric">5.0</td><td class="numeric">0.001%</td><td class="numeric">1/5</td></tr>
+<tr><td>83</td><td><strong>PylumLoader</strong></td><td><code>0x00000000009BE34A</code></td><td class="numeric">4.0</td><td class="numeric">0.001%</td><td class="numeric">1/5</td></tr>
+<tr><td>84</td><td><strong>ActiveConsole</strong></td><td><code>BIO_f_prefix</code></td><td class="numeric">4.0</td><td class="numeric">0.001%</td><td class="numeric">1/5</td></tr>
+<tr><td>85</td><td><strong>ActiveConsole</strong></td><td><code><lambda_851e20a1c1d66d8ac8d3b71e097b8a16>::operator()</code></td><td class="numeric">3.0</td><td class="numeric">0%</td><td class="numeric">1/5</td></tr>
+</table>
+</body></html>
+
+

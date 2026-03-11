@@ -1156,105 +1156,140 @@ $($script:SharedCss)
         [void]$sb.AppendLine("<p>No ETL trace data available.</p>")
     } else {
         $validTraces = @($EtlData.traces | Where-Object { -not $_.error -and $_.topProcesses })
-        $rankedTraces = @($validTraces | Sort-Object -Property { ($_.topProcesses | Where-Object { @("minionhost","ActiveConsole","CrsSvc","PylumLoader") -contains $_.process } | Measure-Object -Property weightMs -Sum).Sum } -Descending)
-        $top3Traces = $rankedTraces | Select-Object -First 3
+        $globalTotalWeightMs = ($validTraces | Measure-Object -Property totalWeightMs -Sum).Sum
+        $globalTotalSamples = ($validTraces | ForEach-Object { if ($_.sampleCount) { $_.sampleCount } else { 0 } } | Measure-Object -Sum).Sum
+        $traceCount = $validTraces.Count
+        $globalWeightSec = [math]::Round($globalTotalWeightMs / 1000, 0)
+        $globalWeightMin = [math]::Round($globalTotalWeightMs / 1000 / 60, 1)
 
-        foreach ($t in $top3Traces) {
-            $scenarioName = $t.scenario -replace '_TEST-PERF-S\d+(_\d+)?$', ''
-            if (-not $scenarioName) { $scenarioName = $t.scenario }
-            $hostMatch = if ($t.scenario -match '(TEST-PERF-S\d+)') { $Matches[1] } elseif ($t.traceFile -match '(TEST-PERF-S\d+)') { $Matches[1] } else { "Unknown" }
-            $etlRoleMap = @{ "TEST-PERF-S1" = "No Sensor (Baseline)"; "TEST-PERF-S2" = "V26.1 + Phoenix"; "TEST-PERF-S3" = "V26.1 + Legacy"; "TEST-PERF-S4" = "V24.1 + Legacy" }
-            $traceRole = if ($etlRoleMap[$hostMatch]) { $etlRoleMap[$hostMatch] } else { $hostMatch }
-            $durationSec = if ($t.totalWeightMs) { [math]::Round([double]$t.totalWeightMs / 1000, 1) } else { 0 }
-            $durationMin = [math]::Round($durationSec / 60, 1)
-            $sampleCount = if ($t.sampleCount) { $t.sampleCount.ToString('N0') } else { "N/A" }
+        $scenarioNames = @($validTraces | ForEach-Object { $_.scenario -replace '_TEST-PERF-S\d+(_\d+)?$', '' })
+        $hostMatch = if ($validTraces[0].scenario -match '(TEST-PERF-S\d+)') { $Matches[1] } elseif ($validTraces[0].traceFile -match '(TEST-PERF-S\d+)') { $Matches[1] } else { "Unknown" }
+        $etlRoleMap = @{ "TEST-PERF-S1" = "No Sensor (Baseline)"; "TEST-PERF-S2" = "V26.1 + Phoenix"; "TEST-PERF-S3" = "V26.1 + Legacy"; "TEST-PERF-S4" = "V24.1 + Legacy" }
+        $traceRole = if ($etlRoleMap[$hostMatch]) { $etlRoleMap[$hostMatch] } else { $hostMatch }
 
-            [void]$sb.AppendLine("<h2>Scenario: <code>$scenarioName</code></h2>")
-            [void]$sb.AppendLine("<table>")
-            [void]$sb.AppendLine("<tr><th>Property</th><th>Value</th></tr>")
-            [void]$sb.AppendLine("<tr><td>Host</td><td>$hostMatch ($traceRole)</td></tr>")
-            [void]$sb.AppendLine("<tr><td>Trace File</td><td><code>$($t.traceFile)</code></td></tr>")
-            [void]$sb.AppendLine("<tr><td>Total CPU Samples</td><td>$sampleCount</td></tr>")
-            [void]$sb.AppendLine("<tr><td>Total CPU Weight</td><td>$([math]::Round([double]$t.totalWeightMs, 0).ToString('N0')) ms ($durationMin min across all cores)</td></tr>")
+        [void]$sb.AppendLine("<h2>Trace Summary</h2>")
+        [void]$sb.AppendLine("<table>")
+        [void]$sb.AppendLine("<tr><th>Property</th><th>Value</th></tr>")
+        [void]$sb.AppendLine("<tr><td>Host</td><td>$hostMatch ($traceRole)</td></tr>")
+        [void]$sb.AppendLine("<tr><td>Scenarios</td><td>$($scenarioNames -join ', ') ($traceCount total)</td></tr>")
+        [void]$sb.AppendLine("<tr><td>Total CPU Samples</td><td>$($globalTotalSamples.ToString('N0'))</td></tr>")
+        [void]$sb.AppendLine("<tr><td>Total CPU Weight</td><td>$($globalWeightSec.ToString('N0'))s ($globalWeightMin min across all cores)</td></tr>")
+        [void]$sb.AppendLine("</table>")
+
+        [void]$sb.AppendLine("<div class=`"callout`"><strong>How to read this report:</strong> CPU samples from <strong>$traceCount scenarios</strong> are aggregated into unified tables. Each percentage represents the fraction of <em>total system CPU capacity</em> across all cores and all traces combined. On a 2-core machine, 100% = both cores fully utilized for the entire combined duration. This gives a holistic view of CPU consumption across diverse workload types.</div>")
+
+        $sensorProcessNames = @("minionhost", "ActiveConsole", "CrsSvc", "PylumLoader", "AmSvc", "WscIfSvc", "ExecutionPreventionSvc", "CrAmTray", "Nnx", "CrDrvCtrl")
+        $globalProcesses = @{}
+
+        foreach ($t in $validTraces) {
+            foreach ($p in $t.topProcesses) {
+                if ($globalProcesses.ContainsKey($p.process)) {
+                    $globalProcesses[$p.process].weightMs += [double]$p.weightMs
+                } else {
+                    $globalProcesses[$p.process] = @{
+                        process = $p.process
+                        weightMs = [double]$p.weightMs
+                        isSensor = $sensorProcessNames -contains $p.process
+                    }
+                }
+            }
+        }
+
+        foreach ($key in @($globalProcesses.Keys)) {
+            $globalProcesses[$key].percent = if ($globalTotalWeightMs -gt 0) { [math]::Round($globalProcesses[$key].weightMs / $globalTotalWeightMs * 100, 3) } else { 0 }
+        }
+
+        $sensorProcs = @($globalProcesses.Values | Where-Object { $_.isSensor } | Sort-Object { $_.weightMs } -Descending)
+        $otherProcs = @($globalProcesses.Values | Where-Object { -not $_.isSensor } | Sort-Object { $_.weightMs } -Descending)
+
+        if ($sensorProcs.Count -gt 0) {
+            $totalSensorMs = ($sensorProcs | ForEach-Object { $_.weightMs } | Measure-Object -Sum).Sum
+            $totalSensorPct = if ($globalTotalWeightMs -gt 0) { [math]::Round($totalSensorMs / $globalTotalWeightMs * 100, 2) } else { 0 }
+            [void]$sb.AppendLine("<h2>Sensor Processes (Cybereason)</h2>")
+            [void]$sb.AppendLine("<table><tr><th>Process</th><th>CPU time (ms)</th><th>% of Total CPU</th></tr>")
+            foreach ($p in $sensorProcs) {
+                [void]$sb.AppendLine("<tr><td><strong>$($p.process)</strong></td><td class=`"numeric`">$([math]::Round($p.weightMs, 1).ToString('N1'))</td><td class=`"numeric`">$($p.percent)%</td></tr>")
+            }
+            [void]$sb.AppendLine("<tr class=`"total-row`"><td><strong>Total Sensor CPU</strong></td><td class=`"numeric`">$([math]::Round($totalSensorMs, 1).ToString('N1'))</td><td class=`"numeric`">$totalSensorPct%</td></tr>")
             [void]$sb.AppendLine("</table>")
+        }
 
-            [void]$sb.AppendLine('<div class="callout"><strong>How to read percentages:</strong> Each percentage represents the fraction of <em>total system CPU capacity</em> across all cores over the full trace duration. On a 2-core machine, 100% = both cores fully utilized for the entire trace. A sensor process using 0.5% means it used that fraction of the total CPU budget. Low percentages for sensor processes indicate efficient CPU usage.</div>')
-
-            $sensorProcesses = @("minionhost", "ActiveConsole", "CrsSvc", "PylumLoader", "AmSvc", "WscIfSvc", "ExecutionPreventionSvc", "CrAmTray", "Nnx", "CrDrvCtrl")
-            $sensorProcs = @($t.topProcesses | Where-Object { $sensorProcesses -contains $_.process })
-            $otherProcs = @($t.topProcesses | Where-Object { $sensorProcesses -notcontains $_.process })
-
-            if ($sensorProcs.Count -gt 0) {
-                $totalSensorMs = ($sensorProcs | Measure-Object -Property weightMs -Sum).Sum
-                $totalSensorPct = ($sensorProcs | Measure-Object -Property percent -Sum).Sum
-                [void]$sb.AppendLine("<h3>Sensor Processes (Cybereason)</h3>")
-                [void]$sb.AppendLine("<table><tr><th>Process</th><th>CPU time (ms)</th><th>% of Total CPU</th></tr>")
-                foreach ($p in $sensorProcs) {
-                    [void]$sb.AppendLine("<tr><td><strong>$($p.process)</strong></td><td class=`"numeric`">$([math]::Round([double]$p.weightMs, 1).ToString('N1'))</td><td class=`"numeric`">$([math]::Round([double]$p.percent, 2))%</td></tr>")
-                }
-                [void]$sb.AppendLine("<tr class=`"total-row`"><td><strong>Total Sensor CPU</strong></td><td class=`"numeric`">$([math]::Round($totalSensorMs, 1).ToString('N1'))</td><td class=`"numeric`">$([math]::Round($totalSensorPct, 2))%</td></tr>")
-                [void]$sb.AppendLine("</table>")
+        if ($otherProcs.Count -gt 0) {
+            [void]$sb.AppendLine("<h2>Other System Processes</h2>")
+            [void]$sb.AppendLine("<table><tr><th>Process</th><th>CPU time (ms)</th><th>% of Total CPU</th></tr>")
+            foreach ($p in $otherProcs) {
+                [void]$sb.AppendLine("<tr><td>$($p.process)</td><td class=`"numeric`">$([math]::Round($p.weightMs, 1).ToString('N1'))</td><td class=`"numeric`">$($p.percent)%</td></tr>")
             }
-
-            if ($otherProcs.Count -gt 0) {
-                [void]$sb.AppendLine("<h3>Other System Processes</h3>")
-                [void]$sb.AppendLine("<table><tr><th>Process</th><th>CPU time (ms)</th><th>% of Total CPU</th></tr>")
-                foreach ($p in $otherProcs) {
-                    [void]$sb.AppendLine("<tr><td>$($p.process)</td><td class=`"numeric`">$([math]::Round([double]$p.weightMs, 1).ToString('N1'))</td><td class=`"numeric`">$([math]::Round([double]$p.percent, 2))%</td></tr>")
-                }
-                [void]$sb.AppendLine("</table>")
-            }
+            [void]$sb.AppendLine("</table>")
         }
 
         $hasAnyFunctions = @($validTraces | Where-Object { $_.topFunctions -and $_.topFunctions.Count -gt 0 }).Count -gt 0
         if (($UseSymbols -or $hasAnyFunctions) -and $validTraces.Count -gt 0) {
             [void]$sb.AppendLine("<h2>Function-Level Hotspots</h2>")
             $sensorModules = @("minionhost", "ActiveConsole", "PylumLoader", "CrsSvc", "AmSvc", "WscIfSvc", "ExecutionPreventionSvc", "CrAmTray", "CrDrvCtrl", "Nnx")
-            foreach ($t in $top3Traces) {
-                if ($t.topFunctions -and $t.topFunctions.Count -gt 0) {
-                    $filtered = @($t.topFunctions | Where-Object {
-                        $sensorModules -contains $_.module -and
-                        $_.function -notlike "boost::*" -and
-                        $_.function -notlike "std::*" -and
-                        $_.function -notlike "sqlite3*" -and
-                        $_.function -notlike "nghttp2*" -and
-                        $_.function -notlike "ossl_*" -and
-                        $_.function -notlike "OPENSSL_*" -and
-                        $_.function -notlike "operator new*" -and
-                        $_.function -notlike "operator delete*" -and
-                        $_.function -notlike "__crt_*" -and
-                        $_.function -notlike "memcpy*" -and
-                        $_.function -notlike "memset*" -and
-                        $_.function -notlike "strlen*" -and
-                        $_.function -notlike "malloc*" -and
-                        $_.function -notlike "free*" -and
-                        $_.function -notlike "vcruntime*" -and
-                        $_.function -notlike "_guard_*" -and
-                        $_.function -notlike "__guard_*" -and
-                        $_.function -notlike "__security_*" -and
-                        $_.function -notlike "ntdll!*" -and
-                        $_.function -notlike "ntoskrnl!*" -and
-                        $_.function -notlike "ucrtbase!*"
-                    })
-                    if ($filtered.Count -eq 0) { continue }
-                    $scenarioName = $t.scenario -replace '_TEST-PERF-S\d+(_\d+)?$', ''
-                    $hasUnresolved = @($filtered | Where-Object { $_.function -match '^0x' }).Count -gt 0
-                    $hasResolved = @($filtered | Where-Object { $_.function -notmatch '^0x' }).Count -gt 0
-                    if ($hasUnresolved -and -not $hasResolved) {
-                        [void]$sb.AppendLine('<div class="callout" style="border-left: 4px solid #f39c12;"><strong>Symbol Note:</strong> Function names could not be resolved because the PDB symbol files do not exactly match the installed sensor binaries (GUID mismatch). The addresses shown are memory offsets within each module. To resolve function names, obtain PDB files from the exact same build as the installed sensor.</div>')
+
+            $globalFunctions = @{}
+
+            foreach ($t in $validTraces) {
+                if (-not $t.topFunctions) { continue }
+                $filtered = @($t.topFunctions | Where-Object {
+                    $sensorModules -contains $_.module -and
+                    $_.function -notlike "boost::*" -and
+                    $_.function -notlike "std::*" -and
+                    $_.function -notlike "sqlite3*" -and
+                    $_.function -notlike "nghttp2*" -and
+                    $_.function -notlike "ossl_*" -and
+                    $_.function -notlike "OPENSSL_*" -and
+                    $_.function -notlike "operator new*" -and
+                    $_.function -notlike "operator delete*" -and
+                    $_.function -notlike "__crt_*" -and
+                    $_.function -notlike "memcpy*" -and
+                    $_.function -notlike "memset*" -and
+                    $_.function -notlike "strlen*" -and
+                    $_.function -notlike "malloc*" -and
+                    $_.function -notlike "free*" -and
+                    $_.function -notlike "vcruntime*" -and
+                    $_.function -notlike "_guard_*" -and
+                    $_.function -notlike "__guard_*" -and
+                    $_.function -notlike "__security_*" -and
+                    $_.function -notlike "ntdll!*" -and
+                    $_.function -notlike "ntoskrnl!*" -and
+                    $_.function -notlike "ucrtbase!*"
+                })
+                foreach ($f in $filtered) {
+                    $key = "$($f.module)|$($f.function)"
+                    if ($globalFunctions.ContainsKey($key)) {
+                        $globalFunctions[$key].weightMs += [double]$f.weightMs
+                        $globalFunctions[$key].scenarioCount++
                     } else {
-                        [void]$sb.AppendLine('<div class="callout"><strong>What this shows:</strong> Top CPU-consuming functions within Cybereason sensor modules, resolved from PDB symbol files. OS and third-party functions (ntoskrnl, boost, etc.) are excluded. Percentages are fractions of total system CPU capacity.</div>')
+                        $globalFunctions[$key] = @{
+                            module = $f.module
+                            function = $f.function
+                            weightMs = [double]$f.weightMs
+                            scenarioCount = 1
+                        }
                     }
-                    $sortedAll = $filtered | Sort-Object { [double]$_.weightMs } -Descending
-                    [void]$sb.AppendLine("<h3>$scenarioName</h3>")
-                    [void]$sb.AppendLine("<table><tr><th>#</th><th>Module</th><th>Function</th><th>CPU time (ms)</th><th>% of Total CPU</th></tr>")
-                    $rank = 1
-                    foreach ($f in $sortedAll) {
-                        [void]$sb.AppendLine("<tr><td>$rank</td><td><strong>$($f.module)</strong></td><td><code>$($f.function)</code></td><td class=`"numeric`">$([math]::Round([double]$f.weightMs, 1).ToString('N1'))</td><td class=`"numeric`">$([math]::Round([double]$f.percent, 3))%</td></tr>")
-                        $rank++
-                    }
-                    [void]$sb.AppendLine("</table>")
                 }
+            }
+
+            if ($globalFunctions.Count -gt 0) {
+                $hasUnresolved = @($globalFunctions.Values | Where-Object { $_.function -match '^0x' }).Count -gt 0
+                $hasResolved = @($globalFunctions.Values | Where-Object { $_.function -notmatch '^0x' }).Count -gt 0
+                if ($hasUnresolved -and -not $hasResolved) {
+                    [void]$sb.AppendLine('<div class="callout" style="border-left: 4px solid #f39c12;"><strong>Symbol Note:</strong> Function names could not be resolved because the PDB symbol files do not exactly match the installed sensor binaries (GUID mismatch). The addresses shown are memory offsets within each module. To resolve function names, obtain PDB files from the exact same build as the installed sensor.</div>')
+                } else {
+                    [void]$sb.AppendLine("<div class=`"callout`"><strong>What this shows:</strong> Top CPU-consuming functions within Cybereason sensor modules, resolved from PDB symbol files. Each function''s weight is the sum of its CPU samples across all scenarios. OS and third-party functions are excluded.</div>")
+                }
+                $sortedGlobal = $globalFunctions.Values | Sort-Object { $_.weightMs } -Descending
+                [void]$sb.AppendLine("<table><tr><th>#</th><th>Module</th><th>Function</th><th>CPU time (ms)</th><th>% of Total CPU</th><th>Seen in</th></tr>")
+                $rank = 1
+                foreach ($f in $sortedGlobal) {
+                    $pct = if ($globalTotalWeightMs -gt 0) { [math]::Round($f.weightMs / $globalTotalWeightMs * 100, 3) } else { 0 }
+                    $seenLabel = "$($f.scenarioCount)/$traceCount"
+                    [void]$sb.AppendLine("<tr><td>$rank</td><td><strong>$($f.module)</strong></td><td><code>$($f.function)</code></td><td class=`"numeric`">$([math]::Round($f.weightMs, 1).ToString('N1'))</td><td class=`"numeric`">$pct%</td><td class=`"numeric`">$seenLabel</td></tr>")
+                    $rank++
+                }
+                [void]$sb.AppendLine("</table>")
             }
         }
     }
