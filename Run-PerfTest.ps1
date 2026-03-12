@@ -237,6 +237,7 @@ if ($EnableProfiling) {
             EtlOutputPath      = $etlReportPath
             NumCores           = $NumCores
             ScenarioResultsDir = $resultsDir
+            TraceDir           = $tracesDir
         }
         if ($useSymbols)         { $etlArgs["UseSymbols"] = $true }
         if ($GenerateConfluence) { $etlArgs["GenerateConfluence"] = $true }

@@ -6,7 +6,7 @@
     Runs influx-analyze.ps1 and EtlAnalyzer, merges findings, and produces a Markdown report.
 
 .PARAMETER TraceDir
-    Path to directory containing .etl trace files (default: C:\Users\OmerMunchik\playground\traces\2026-02-23).
+    Path to directory containing .etl trace files (default: C:\PerfTest\traces).
 
 .PARAMETER Token
     InfluxDB API token. If not provided, uses $env:INFLUXDB_TOKEN.
@@ -41,7 +41,7 @@
 
 .EXAMPLE
     $env:INFLUXDB_TOKEN = "your-token"
-    .\generate-perf-report.ps1 -TraceDir "C:\Users\OmerMunchik\playground\traces\2026-02-23"
+    .\generate-perf-report.ps1 -TraceDir "C:\PerfTest\traces"
 
 .EXAMPLE
     .\generate-perf-report.ps1 -TraceDir "C:\traces\2026-02-23" -InfluxJsonPath "C:\temp\influx-data.json"
@@ -52,7 +52,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$TraceDir = "C:\Users\OmerMunchik\playground\traces\2026-02-23",
+    [string]$TraceDir = "C:\PerfTest\traces",
     [string]$Token = $env:INFLUXDB_TOKEN,
     [string]$InfluxUrl = "http://172.46.16.24:8086",
     [string]$TimeRange = "-7d",

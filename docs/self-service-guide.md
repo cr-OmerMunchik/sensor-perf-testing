@@ -62,7 +62,7 @@ Run the following in an **elevated PowerShell** (right-click PowerShell > "Run a
 ```powershell
 winget install "openssh preview" --accept-package-agreements --accept-source-agreements
 ```
-
+\
 **Option B -- Download from GitHub (works on any Windows version, no winget needed):**
 
 ```powershell
@@ -109,7 +109,41 @@ scp -r .\sensor-perf-testing admin@TARGET_VM:C:\sensor-perf-testing
 
 Replace `TARGET_VM` with the IP or hostname of your target machine, and `admin` with the username.
 
-### 3. Run the tests
+### 3. Set up PDB symbols (optional -- needed for function-level ETL profiling)
+
+PDB (Program Database) files are debug symbol files that map binary addresses to human-readable function names. Without them the ETL profiling report shows raw hex addresses instead of names like `PxMessages::SetEventCommonData`.
+
+The PDB files must come from the **exact same build** as the sensor installed on the test machine (a GUID embedded in both the binary and the PDB must match).
+
+**Option A -- From a local build:**
+
+If you built the sensor locally, the PDB files are in the build output directories:
+
+```
+<sensor-repo>\output\x64\Release\
+├── ActiveProbe\Win\x64\Release\ActiveConsole.pdb
+├── NnxSvc\Win\x64\Release\Nnx.pdb
+├── CrsSvc\x64\Release\CrsSvc.pdb
+├── BlockySvc\x64\Release\AmSvc.pdb
+└── ...
+```
+
+Pass the root output directory as `-SymbolsDir` -- the script scans recursively for `.pdb` files.
+
+**Option B -- From Jenkins artifacts:**
+
+1. Go to the Jenkins build that produced the sensor version installed on the test machine, for example
+   [https://jenkins-irelease.eng.cybereason.net/view/Release-Candidates/view/integration/job/msi-sensor-x64-release-build-integration/](https://jenkins-irelease.eng.cybereason.net/view/Release-Candidates/view/integration/job/msi-sensor-x64-release-build-integration/)
+2. Find the build number matching your sensor version
+3. Go to **Build Artifacts** and download `output-x64.zip`
+4. Extract the archive to a directory on the target machine (e.g., `C:\Symbols\v26.1.30.1\`)
+
+**Troubleshooting symbols:**
+- Verify the sensor version matches the PDB version exactly (same build number)
+- Check the build output contains `.pdb` files (not just `.exe`/`.dll`)
+- The script prints how many PDB directories it found -- if it says 0, the path is wrong
+
+### 4. Run the tests
 
 Open an **elevated PowerShell** on the target machine (right-click PowerShell > **"Run as administrator"**) and run:
 
@@ -132,7 +166,7 @@ cd C:\sensor-perf-testing
 .\Run-PerfTest.ps1 -OnlyScenarios @("file_stress_loop","process_storm","idle_baseline")
 ```
 
-### 4. Collect reports
+### 5. Collect reports
 
 Reports are saved to `C:\PerfTest\reports\` on the target machine:
 
@@ -219,50 +253,6 @@ Deep CPU analysis from ETL traces:
 | `-ReportTag` | string | -- | Tag appended to report filenames (e.g., version) |
 
 ---
-
-## PDB Symbols for Function Name Resolution
-
-### What are PDB files?
-
-PDB (Program Database) files are **debug symbol files** generated during compilation. They contain the mapping between binary memory addresses and human-readable function names, source file paths, and line numbers. Without PDB files, the ETL profiling report can only show raw hex addresses (e.g., `0x7ff61a2b3c4d`) instead of meaningful names like `PxMessages::SetEventCommonData`.
-
-### Where to get PDB files
-
-The PDB files must come from the **exact same build** as the sensor installed on the test machine. A GUID is embedded in both the `.exe`/`.dll` and the `.pdb` -- if they don't match, symbols won't resolve.
-
-**Option A -- From a local build:**
-
-If you built the sensor locally, the PDB files are in the build output directories:
-
-```
-<sensor-repo>\output\x64\Release\
-├── ActiveProbe\Win\x64\Release\ActiveConsole.pdb
-├── NnxSvc\Win\x64\Release\Nnx.pdb
-├── CrsSvc\x64\Release\CrsSvc.pdb
-├── BlockySvc\x64\Release\AmSvc.pdb
-└── ...
-```
-
-Pass the root output directory as `-SymbolsDir` -- the script scans recursively for `.pdb` files.
-
-**Option B -- From Jenkins artifacts:**
-
-1. Go to the Jenkins build that produced the sensor version installed on the test machine:
-   [https://jenkins-irelease.eng.cybereason.net/view/Release-Candidates/view/integration/job/msi-sensor-x64-release-build-integration/](https://jenkins-irelease.eng.cybereason.net/view/Release-Candidates/view/integration/job/msi-sensor-x64-release-build-integration/)
-2. Find the build number matching your sensor version
-3. Go to **Build Artifacts** and download `output-x64.zip`
-4. Extract the archive to a local directory (e.g., `C:\Symbols\v26.1.30.1\`)
-5. Pass that directory as `-SymbolsDir`:
-   ```powershell
-   .\Run-PerfTest.ps1 -EnableProfiling -SymbolsDir "C:\Symbols\v26.1.30.1"
-   ```
-
-### Troubleshooting symbols
-
-If the ETL report still shows hex addresses after providing `-SymbolsDir`:
-- Verify the sensor version matches the PDB version exactly (same build number)
-- Check the build output contains `.pdb` files (not just `.exe`/`.dll`)
-- The script prints how many PDB directories it found -- if it says 0, the path is wrong
 
 ---
 
