@@ -15,6 +15,7 @@ All prerequisites must be installed **on the target machine**.
 | **OS** | Windows 10/11 or Windows Server 2016+ |
 | **PowerShell** | 5.1+ (built-in) -- must be run as **Administrator** (right-click PowerShell > "Run as administrator") |
 | **CPU cores** | 2+ (2-core VMs use Light mode by default) |
+| **Disk space** | 2 GB free minimum; 10+ GB recommended if using `-EnableProfiling` (ETL traces are 200-500 MB each) |
 | **.NET SDK** | 8.0+ -- only needed if you enable ETL profiling |
 | **wpr.exe** | Windows Performance Toolkit -- only needed for ETL profiling |
 | **Sensor installed** | The Cybereason sensor must be running on the test machine |

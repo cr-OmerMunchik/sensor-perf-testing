@@ -28,7 +28,7 @@ cd sensor-perf-testing
 .\Run-PerfTest.ps1 -EnableProfiling -SymbolsDir "C:\Symbols\v26.1.30.1"
 ```
 
-This runs the test scenarios with inline metrics collection (Windows Performance Counters, 5-second interval), then generates HTML reports in the `reports/` directory:
+This runs the test scenarios with inline metrics collection (Windows Performance Counters, 5-second interval), then generates HTML reports in `C:\PerfTest\reports\`:
 
 - **Performance report** -- per-process CPU and memory (average/peak) for each scenario
 - **ETL profiling report** -- function-level CPU hotspots within sensor modules (requires `-EnableProfiling`)
