@@ -88,10 +88,10 @@ function Start-Scenario {
     $profilingEnabled = Test-ProfilingEnabled
     if ($profilingEnabled) {
         $profiles = Get-ProfilingProfiles
-        $statusOutput = & wpr.exe -status 2>&1
+        $statusOutput = cmd /c "wpr.exe -status 2>&1"
         if ($statusOutput -match "WPR is recording") {
             Write-Host "[WARN] WPR already recording - cancelling previous trace." -ForegroundColor Yellow
-            & wpr.exe -cancel 2>&1 | Out-Null
+            cmd /c "wpr.exe -cancel 2>&1" | Out-Null
             Start-Sleep -Seconds 2
         }
 
@@ -277,8 +277,10 @@ function Complete-Scenario {
 
         Write-Host "Stopping WPR trace..." -ForegroundColor Cyan
         $wprSuccess = $false
+        $savedEAP = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
         for ($attempt = 1; $attempt -le 3; $attempt++) {
-            & wpr.exe -stop $etlFile 2>&1
+            $wprOut = cmd /c "wpr.exe -stop `"$etlFile`" 2>&1"
             if ($LASTEXITCODE -eq 0) {
                 $wprSuccess = $true
                 break
@@ -288,6 +290,7 @@ function Complete-Scenario {
                 Start-Sleep -Seconds 5
             }
         }
+        $ErrorActionPreference = $savedEAP
         if ($wprSuccess) {
             $fileSize = [math]::Round((Get-Item $etlFile).Length / 1MB, 1)
             Write-Host "[OK] Trace saved: $etlFile ($fileSize MB)" -ForegroundColor Green
