@@ -24,7 +24,7 @@ Desktop.ini
 *backup*.json
 *.backup-*
 
-# Generated reports and data
+# Generated reports and data (root-level temp reports)
 executive-summary-*.md
 vp-presentation-slides.md
 perf-bottleneck-report-*.md
@@ -33,7 +33,26 @@ influx-data*.json
 influx-raw-*.csv
 influx-sensor-avg.json
 peak-query.csv
+perf-report-*.html
+perf-report-*.md
+dry-run-report.md
+
+# ETL trace directories and data
+etl-traces-*/
+traces/
+traces-*/
 fresh-traces/
+etl-data-*.json
+etl-stderr.txt
+*.etl
+
+# Sensor binaries and PDB build artifacts
+CybereasonSensor64_*/
+sensor-binaries-*/
+
+# Demo and temp files
+demo */
+test-scenarios.zip
 
 # .NET build artifacts
 bin/

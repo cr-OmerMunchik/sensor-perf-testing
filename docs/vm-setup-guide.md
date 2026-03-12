@@ -1,6 +1,8 @@
 # VM Setup Guide -- Sensor Performance Testing
 
-Complete step-by-step guide for setting up the performance testing environment from scratch.
+Complete step-by-step guide for setting up the **multi-VM lab** performance testing environment from scratch.
+
+> **Looking for single-machine testing?** You don't need this multi-VM setup. See the [Self-Service Guide](self-service-guide.md) to run tests on any VM or workstation with just `Run-PerfTest.ps1`.
 
 ## Overview
 

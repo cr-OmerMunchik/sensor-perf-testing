@@ -66,7 +66,8 @@ param(
     [string]$EtlOutputPath,
     [string]$EtlJsonPath,
     [switch]$GenerateConfluence,
-    [switch]$LightMode
+    [switch]$LightMode,
+    [string]$ScenarioResultsDir
 )
 
 $ErrorActionPreference = "Stop"
@@ -1128,6 +1129,252 @@ The scenario with the largest cross-host total CPU variance is highlighted in ye
     return $sb.ToString()
 }
 
+# ── Build self-service report from scenario result JSONs ──
+
+function Build-SelfServiceReport {
+    param(
+        [string]$ResultsDir,
+        [int]$NumCores = 0
+    )
+
+    $jsonFiles = Get-ChildItem -Path $ResultsDir -Filter "*.json" -File | Sort-Object Name
+    if ($jsonFiles.Count -eq 0) {
+        throw "No scenario JSON files found in $ResultsDir"
+    }
+
+    $scenarioResults = @()
+    foreach ($f in $jsonFiles) {
+        $data = Get-Content $f.FullName -Raw | ConvertFrom-Json
+        $scenarioResults += $data
+    }
+
+    if ($NumCores -le 0) {
+        $first = $scenarioResults | Where-Object { $_.num_cores } | Select-Object -First 1
+        $NumCores = if ($first) { [int]$first.num_cores } else { [Environment]::ProcessorCount }
+    }
+
+    $hostName = ($scenarioResults | Where-Object { $_.host } | Select-Object -First 1).host
+    if (-not $hostName) { $hostName = $env:COMPUTERNAME }
+
+    $sensorProcessNames = @("minionhost", "ActiveConsole", "CrsSvc", "PylumLoader", "AmSvc", "WscIfSvc", "ExecutionPreventionSvc", "CrAmTray", "Nnx", "CrDrvCtrl")
+
+    $sb = [System.Text.StringBuilder]::new()
+    $genTime = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+
+    [void]$sb.AppendLine(@"
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cybereason Sensor Performance Report</title>
+<style>
+$($script:SharedCss)
+</style>
+</head>
+<body>
+<h1>Cybereason Sensor Performance Report</h1>
+<p><strong>Generated:</strong> $genTime &nbsp;|&nbsp; <strong>Host:</strong> $hostName &nbsp;|&nbsp; <strong>Cores:</strong> $NumCores</p>
+"@)
+
+    # ── Test Info ──
+    $firstStart = ($scenarioResults | Where-Object { $_.start_time } | Sort-Object { [datetime]$_.start_time } | Select-Object -First 1).start_time
+    $lastEnd = ($scenarioResults | Where-Object { $_.end_time } | Sort-Object { [datetime]$_.end_time } -Descending | Select-Object -First 1).end_time
+    $totalDurMin = if ($firstStart -and $lastEnd) { [math]::Round(([datetime]$lastEnd - [datetime]$firstStart).TotalMinutes, 1) } else { "?" }
+
+    [void]$sb.AppendLine("<h2>Test Information</h2>")
+    [void]$sb.AppendLine("<table>")
+    [void]$sb.AppendLine("<tr><th>Property</th><th>Value</th></tr>")
+    [void]$sb.AppendLine("<tr><td>Host</td><td>$hostName ($NumCores cores)</td></tr>")
+    [void]$sb.AppendLine("<tr><td>Scenarios run</td><td>$($scenarioResults.Count)</td></tr>")
+    [void]$sb.AppendLine("<tr><td>Test window</td><td>$firstStart &rarr; $lastEnd ($totalDurMin min)</td></tr>")
+    [void]$sb.AppendLine("<tr><td>Data source</td><td>Inline process metrics (Windows Performance Counters, 5s sampling)</td></tr>")
+    [void]$sb.AppendLine("</table>")
+
+    # ── Scenario Descriptions ──
+    $scenarioNames = @($scenarioResults | ForEach-Object { $_.scenario } | Where-Object { $_ })
+    if ($script:ScenarioDescriptions -and $scenarioNames.Count -gt 0) {
+        [void]$sb.AppendLine("<h3>Scenarios</h3>")
+        [void]$sb.AppendLine("<table><tr><th>#</th><th>Scenario</th><th>Description</th><th>Duration</th></tr>")
+        $scIdx = 1
+        foreach ($sr in $scenarioResults) {
+            $scName = $sr.scenario
+            if (-not $scName) { continue }
+            $scDesc = if ($script:ScenarioDescriptions[$scName]) { $script:ScenarioDescriptions[$scName] } else { "-" }
+            $durStr = if ($sr.duration_seconds) { "$([math]::Round($sr.duration_seconds, 0))s" } else { "-" }
+            [void]$sb.AppendLine("<tr><td>$scIdx</td><td><code>$scName</code></td><td>$scDesc</td><td class=`"numeric`">$durStr</td></tr>")
+            $scIdx++
+        }
+        [void]$sb.AppendLine("</table>")
+    }
+
+    [void]$sb.AppendLine(@"
+<div class="callout">
+<strong>CPU% Definition:</strong> All per-process CPU values are calculated from Windows <code>% Processor Time</code> deltas divided by the number of CPU cores ($NumCores). This normalizes to a 0&ndash;100% scale representing percentage of total system capacity. Sensor CPU is the sum across all sensor processes.
+</div>
+"@)
+
+    # ── System CPU by scenario ──
+    $hasSystemCpu = @($scenarioResults | Where-Object { $null -ne $_.system_avg_cpu_percent }).Count -gt 0
+    if ($hasSystemCpu) {
+        [void]$sb.AppendLine("<h2>System CPU by Scenario</h2>")
+        [void]$sb.AppendLine(@"
+<div class="callout"><strong>What this shows:</strong> Total system CPU utilization (all processes) during each scenario. Sourced from Windows <code>Processor(_Total)\% Processor Time</code> counter.</div>
+"@)
+        [void]$sb.AppendLine("<table><tr><th>Scenario</th><th>Avg CPU%</th><th>Peak CPU%</th><th>Sensor Avg CPU%</th></tr>")
+        foreach ($sr in $scenarioResults) {
+            if ($null -eq $sr.system_avg_cpu_percent) { continue }
+            $avgVal = [math]::Round($sr.system_avg_cpu_percent, 1)
+            $peakVal = if ($sr.system_peak_cpu_percent) { [math]::Round($sr.system_peak_cpu_percent, 1) } else { "-" }
+            $sensorAvg = if ($sr.total_sensor_avg_cpu_percent) { "$([math]::Round($sr.total_sensor_avg_cpu_percent, 1))%" } else { "-" }
+            $avgColor = Get-CpuColor $avgVal 30 70
+            $peakColor = if ($peakVal -ne "-") { Get-CpuColor $peakVal 50 85 } else { "#95a5a6" }
+            [void]$sb.AppendLine("<tr><td><code>$($sr.scenario)</code></td><td class=`"numeric`" style=`"background-color: $avgColor; color: white;`">$avgVal%</td><td class=`"numeric`" style=`"background-color: $peakColor; color: white;`">$peakVal%</td><td class=`"numeric`">$sensorAvg</td></tr>")
+        }
+        [void]$sb.AppendLine("</table>")
+    }
+
+    # ── Sensor Process CPU ──
+    $scenariosWithMetrics = @($scenarioResults | Where-Object { $_.process_metrics })
+    if ($scenariosWithMetrics.Count -gt 0) {
+        [void]$sb.AppendLine("<h2>Sensor Process CPU - Average by Scenario</h2>")
+        [void]$sb.AppendLine(@"
+<div class="callout"><strong>What this shows:</strong> Per-process average CPU% for each sensor process across scenarios. CPU is normalized by $NumCores cores (0-100% scale = fraction of total system capacity).</div>
+"@)
+
+        $allSensorProcsPresent = @{}
+        foreach ($sr in $scenariosWithMetrics) {
+            $pm = $sr.process_metrics
+            if ($pm -is [PSCustomObject]) {
+                foreach ($prop in $pm.PSObject.Properties) {
+                    if ($sensorProcessNames -contains $prop.Name) { $allSensorProcsPresent[$prop.Name] = $true }
+                }
+            } elseif ($pm -is [hashtable]) {
+                foreach ($key in $pm.Keys) {
+                    if ($sensorProcessNames -contains $key) { $allSensorProcsPresent[$key] = $true }
+                }
+            }
+        }
+        $sensorProcsSorted = @($sensorProcessNames | Where-Object { $allSensorProcsPresent.ContainsKey($_) })
+
+        if ($sensorProcsSorted.Count -gt 0) {
+            [void]$sb.AppendLine("<table><tr><th>Scenario</th>")
+            foreach ($pn in $sensorProcsSorted) { [void]$sb.AppendLine("<th>$pn</th>") }
+            [void]$sb.AppendLine("<th><strong>Total Sensor</strong></th></tr>")
+
+            foreach ($sr in $scenariosWithMetrics) {
+                [void]$sb.AppendLine("<tr><td><code>$($sr.scenario)</code></td>")
+                $pm = $sr.process_metrics
+                $rowTotal = 0.0
+                foreach ($pn in $sensorProcsSorted) {
+                    $procData = $null
+                    if ($pm -is [PSCustomObject] -and $pm.PSObject.Properties[$pn]) {
+                        $procData = $pm.$pn
+                    } elseif ($pm -is [hashtable] -and $pm.ContainsKey($pn)) {
+                        $procData = $pm[$pn]
+                    }
+                    if ($procData) {
+                        $val = [math]::Round([double]$procData.avg_cpu_percent, 1)
+                        $rowTotal += $val
+                        $color = Get-CpuColor $val 5 15
+                        [void]$sb.AppendLine("<td class=`"numeric`" style=`"background-color: $color; color: white;`">$val%</td>")
+                    } else {
+                        [void]$sb.AppendLine("<td class=`"numeric`">0.0%</td>")
+                    }
+                }
+                $totalColor = Get-CpuColor $rowTotal 10 25
+                [void]$sb.AppendLine("<td class=`"numeric`" style=`"background-color: $totalColor; color: white; font-weight: bold;`">$([math]::Round($rowTotal, 1))%</td></tr>")
+            }
+            [void]$sb.AppendLine("</table>")
+        }
+
+        # ── Sensor Process CPU - Peak by Scenario ──
+        [void]$sb.AppendLine("<h2>Sensor Process CPU - Peak by Scenario</h2>")
+        [void]$sb.AppendLine(@"
+<div class="callout"><strong>What this shows:</strong> The highest instantaneous CPU spike for each sensor process during each scenario. Captures worst-case bursts that averages smooth out.</div>
+"@)
+
+        if ($sensorProcsSorted.Count -gt 0) {
+            [void]$sb.AppendLine("<table><tr><th>Scenario</th>")
+            foreach ($pn in $sensorProcsSorted) { [void]$sb.AppendLine("<th>$pn</th>") }
+            [void]$sb.AppendLine("</tr>")
+
+            foreach ($sr in $scenariosWithMetrics) {
+                [void]$sb.AppendLine("<tr><td><code>$($sr.scenario)</code></td>")
+                $pm = $sr.process_metrics
+                foreach ($pn in $sensorProcsSorted) {
+                    $procData = $null
+                    if ($pm -is [PSCustomObject] -and $pm.PSObject.Properties[$pn]) {
+                        $procData = $pm.$pn
+                    } elseif ($pm -is [hashtable] -and $pm.ContainsKey($pn)) {
+                        $procData = $pm[$pn]
+                    }
+                    if ($procData) {
+                        $val = [math]::Round([double]$procData.peak_cpu_percent, 1)
+                        $color = Get-CpuColor $val 10 30
+                        [void]$sb.AppendLine("<td class=`"numeric`" style=`"background-color: $color; color: white;`">$val%</td>")
+                    } else {
+                        [void]$sb.AppendLine("<td class=`"numeric`">0.0%</td>")
+                    }
+                }
+                [void]$sb.AppendLine("</tr>")
+            }
+            [void]$sb.AppendLine("</table>")
+        }
+
+        # ── Sensor Process Memory - Average ──
+        [void]$sb.AppendLine("<h2>Sensor Process Memory (Working Set)</h2>")
+        [void]$sb.AppendLine(@"
+<div class="callout"><strong>What this shows:</strong> Average and peak working set (physical memory) in MB for each sensor process, measured every 5 seconds during each scenario.</div>
+"@)
+
+        if ($sensorProcsSorted.Count -gt 0) {
+            [void]$sb.AppendLine("<table><tr><th rowspan=`"2`">Scenario</th>")
+            foreach ($pn in $sensorProcsSorted) { [void]$sb.AppendLine("<th colspan=`"2`">$pn</th>") }
+            [void]$sb.AppendLine("<th colspan=`"2`"><strong>Total</strong></th></tr>")
+            [void]$sb.AppendLine("<tr>")
+            foreach ($pn in $sensorProcsSorted) { [void]$sb.AppendLine("<th>Avg</th><th>Peak</th>") }
+            [void]$sb.AppendLine("<th>Avg</th><th>Peak</th></tr>")
+
+            foreach ($sr in $scenariosWithMetrics) {
+                [void]$sb.AppendLine("<tr><td><code>$($sr.scenario)</code></td>")
+                $pm = $sr.process_metrics
+                $totalAvg = 0.0; $totalPeak = 0.0
+                foreach ($pn in $sensorProcsSorted) {
+                    $procData = $null
+                    if ($pm -is [PSCustomObject] -and $pm.PSObject.Properties[$pn]) {
+                        $procData = $pm.$pn
+                    } elseif ($pm -is [hashtable] -and $pm.ContainsKey($pn)) {
+                        $procData = $pm[$pn]
+                    }
+                    if ($procData) {
+                        $avgMb = [math]::Round([double]$procData.avg_memory_mb, 1)
+                        $peakMb = [math]::Round([double]$procData.peak_memory_mb, 1)
+                        $totalAvg += $avgMb; $totalPeak += $peakMb
+                        $avgColor = Get-ProcMemColor $avgMb
+                        $peakColor = Get-ProcMemColor $peakMb
+                        [void]$sb.AppendLine("<td class=`"numeric`" style=`"color: $avgColor;`">$avgMb</td><td class=`"numeric`" style=`"color: $peakColor;`">$peakMb</td>")
+                    } else {
+                        [void]$sb.AppendLine("<td class=`"numeric`">-</td><td class=`"numeric`">-</td>")
+                    }
+                }
+                $totalAvgColor = Get-MemColor $totalAvg
+                $totalPeakColor = Get-MemColor $totalPeak
+                [void]$sb.AppendLine("<td class=`"numeric`" style=`"color: $totalAvgColor; font-weight: bold;`">$([math]::Round($totalAvg, 1))</td><td class=`"numeric`" style=`"color: $totalPeakColor; font-weight: bold;`">$([math]::Round($totalPeak, 1))</td>")
+                [void]$sb.AppendLine("</tr>")
+            }
+            [void]$sb.AppendLine("</table>")
+        }
+    } else {
+        [void]$sb.AppendLine(@"
+<div class="summary-box summary-warn"><strong>No process metrics available.</strong> Run scenarios with <code>-CollectMetrics</code> to enable inline process CPU and memory sampling.</div>
+"@)
+    }
+
+    [void]$sb.AppendLine("</body></html>")
+    return $sb.ToString()
+}
+
 # ── Build the separate ETL report ──
 
 function Build-EtlReport {
@@ -1175,6 +1422,18 @@ $($script:SharedCss)
         [void]$sb.AppendLine("<tr><td>Total CPU Samples</td><td>$($globalTotalSamples.ToString('N0'))</td></tr>")
         [void]$sb.AppendLine("<tr><td>Total CPU Weight</td><td>$($globalWeightSec.ToString('N0'))s ($globalWeightMin min across all cores)</td></tr>")
         [void]$sb.AppendLine("</table>")
+
+        if ($script:ScenarioDescriptions -and $scenarioNames.Count -gt 0) {
+            [void]$sb.AppendLine("<h3>Scenarios Profiled</h3>")
+            [void]$sb.AppendLine("<table><tr><th>#</th><th>Scenario</th><th>Description</th></tr>")
+            $scIdx = 1
+            foreach ($scName in $scenarioNames) {
+                $scDesc = if ($script:ScenarioDescriptions[$scName]) { $script:ScenarioDescriptions[$scName] } else { "-" }
+                [void]$sb.AppendLine("<tr><td>$scIdx</td><td><code>$scName</code></td><td>$scDesc</td></tr>")
+                $scIdx++
+            }
+            [void]$sb.AppendLine("</table>")
+        }
 
         [void]$sb.AppendLine("<div class=`"callout`"><strong>How to read this report:</strong> CPU samples from <strong>$traceCount scenarios</strong> are aggregated into unified tables. Each percentage represents the fraction of <em>total system CPU capacity</em> across all cores and all traces combined. On a 2-core machine, 100% = both cores fully utilized for the entire combined duration. This gives a holistic view of CPU consumption across diverse workload types.</div>")
 
@@ -1232,6 +1491,8 @@ $($script:SharedCss)
 
             foreach ($t in $validTraces) {
                 if (-not $t.topFunctions) { continue }
+                $traceScenario = $t.scenario -replace '_TEST-PERF-S\d+(_\d+)?$', ''
+                if (-not $traceScenario) { $traceScenario = $t.scenario }
                 $filtered = @($t.topFunctions | Where-Object {
                     $sensorModules -contains $_.module -and
                     $_.function -notlike "boost::*" -and
@@ -1260,13 +1521,15 @@ $($script:SharedCss)
                     $key = "$($f.module)|$($f.function)"
                     if ($globalFunctions.ContainsKey($key)) {
                         $globalFunctions[$key].weightMs += [double]$f.weightMs
-                        $globalFunctions[$key].scenarioCount++
+                        if ($globalFunctions[$key].scenarios -notcontains $traceScenario) {
+                            $globalFunctions[$key].scenarios += $traceScenario
+                        }
                     } else {
                         $globalFunctions[$key] = @{
                             module = $f.module
                             function = $f.function
                             weightMs = [double]$f.weightMs
-                            scenarioCount = 1
+                            scenarios = @($traceScenario)
                         }
                     }
                 }
@@ -1285,8 +1548,8 @@ $($script:SharedCss)
                 $rank = 1
                 foreach ($f in $sortedGlobal) {
                     $pct = if ($globalTotalWeightMs -gt 0) { [math]::Round($f.weightMs / $globalTotalWeightMs * 100, 3) } else { 0 }
-                    $seenLabel = "$($f.scenarioCount)/$traceCount"
-                    [void]$sb.AppendLine("<tr><td>$rank</td><td><strong>$($f.module)</strong></td><td><code>$($f.function)</code></td><td class=`"numeric`">$([math]::Round($f.weightMs, 1).ToString('N1'))</td><td class=`"numeric`">$pct%</td><td class=`"numeric`">$seenLabel</td></tr>")
+                    $seenLabel = $f.scenarios -join ", "
+                    [void]$sb.AppendLine("<tr><td>$rank</td><td><strong>$($f.module)</strong></td><td><code>$($f.function)</code></td><td class=`"numeric`">$([math]::Round($f.weightMs, 1).ToString('N1'))</td><td class=`"numeric`">$pct%</td><td>$seenLabel</td></tr>")
                     $rank++
                 }
                 [void]$sb.AppendLine("</table>")
@@ -1363,6 +1626,67 @@ if (-not $OutputPath) {
 if (-not $EtlOutputPath) {
     $EtlOutputPath = Join-Path (Split-Path $OutputPath -Parent) "perf-report-etl.html"
 }
+
+# ── Self-service mode: generate report from scenario JSONs, no InfluxDB needed ──
+if ($ScenarioResultsDir) {
+    if (-not (Test-Path $ScenarioResultsDir)) {
+        throw "Scenario results directory not found: $ScenarioResultsDir"
+    }
+    Write-Host "Building self-service performance report from: $ScenarioResultsDir" -ForegroundColor Cyan
+    $report = Build-SelfServiceReport -ResultsDir $ScenarioResultsDir -NumCores $NumCores | Out-String
+    $report | Set-Content -Path $OutputPath -Encoding UTF8
+    Write-Host "Performance report written to: $OutputPath" -ForegroundColor Green
+
+    if (-not $SkipEtl) {
+        $etlData = $null
+        if ($EtlJsonPath -and (Test-Path $EtlJsonPath)) {
+            Write-Host "Using ETL data from: $EtlJsonPath" -ForegroundColor Cyan
+            $etlData = Get-Content $EtlJsonPath -Raw | ConvertFrom-Json
+        } elseif (Test-Path $TraceDir) {
+            $etlProject = Join-Path $scriptDir "etl-analyzer\EtlAnalyzer.csproj"
+            if (Test-Path $etlProject) {
+                Write-Host "Processing ETL traces..." -ForegroundColor Cyan
+                $etlJson = Join-Path $env:TEMP "perf-etl-$(Get-Date -Format 'yyyyMMddHHmmss').json"
+                $etlArgs = @("run", "--project", $etlProject, "--", $TraceDir)
+                if ($UseSymbols) { $etlArgs += "--symbols" }
+                if ($TraceLimit -gt 0) { $etlArgs += "--limit"; $etlArgs += $TraceLimit.ToString() }
+                $ErrorActionPreferencePrev = $ErrorActionPreference
+                $ErrorActionPreference = 'Continue'
+                $etlOutput = & dotnet @etlArgs 2>&1 | Out-String
+                $ErrorActionPreference = $ErrorActionPreferencePrev
+                $etlOutput | Out-File $etlJson -Encoding utf8
+                try {
+                    $etlJsonContent = Get-Content $etlJson -Raw
+                    $jsonMatch = [regex]::Match($etlJsonContent, '\{\s*"traces"\s*:[\s\S]*\}')
+                    if ($jsonMatch.Success) { $etlData = $jsonMatch.Value | ConvertFrom-Json }
+                } catch { Write-Warning "ETL analyzer output could not be parsed: $_" }
+                finally { if (Test-Path $etlJson) { Remove-Item $etlJson -Force -ErrorAction SilentlyContinue } }
+            }
+        }
+        if ($etlData) {
+            $etlReport = Build-EtlReport -EtlData $etlData -UseSymbols:$UseSymbols | Out-String
+            $etlReport | Set-Content -Path $EtlOutputPath -Encoding UTF8
+            Write-Host "ETL report written to: $EtlOutputPath" -ForegroundColor Green
+        }
+    }
+
+    if ($GenerateConfluence) {
+        Write-Host "Generating Confluence-compatible reports..." -ForegroundColor Cyan
+        $confMainPath = [System.IO.Path]::ChangeExtension($OutputPath, "confluence.html")
+        $confMain = Convert-ToConfluence $report
+        $confMain | Set-Content -Path $confMainPath -Encoding UTF8
+        Write-Host "Confluence report: $confMainPath" -ForegroundColor Green
+        if ($etlData) {
+            $confEtlPath = [System.IO.Path]::ChangeExtension($EtlOutputPath, "confluence.html")
+            $confEtl = Convert-ToConfluence $etlReport
+            $confEtl | Set-Content -Path $confEtlPath -Encoding UTF8
+            Write-Host "Confluence ETL report: $confEtlPath" -ForegroundColor Green
+        }
+    }
+    return
+}
+
+# ── Standard mode: InfluxDB + ETL ──
 
 $influxJson = Join-Path $env:TEMP "perf-influx-$(Get-Date -Format 'yyyyMMddHHmmss').json"
 $etlJson = Join-Path $env:TEMP "perf-etl-$(Get-Date -Format 'yyyyMMddHHmmss').json"

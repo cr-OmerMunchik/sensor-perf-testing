@@ -2,7 +2,27 @@
 
 How to execute test scenarios, monitor them in real-time, and review results.
 
-## Overview
+## Self-Service Mode (Single Machine)
+
+For running tests on any single VM or workstation without the multi-VM lab setup, use `Run-PerfTest.ps1`:
+
+```powershell
+cd sensor-perf-testing
+
+# Default run (Light mode, ~45 min)
+.\Run-PerfTest.ps1
+
+# Heavy mode, with profiling
+.\Run-PerfTest.ps1 -HeavyMode -EnableProfiling -SymbolsDir "C:\Symbols\v26.1.30.1"
+```
+
+This handles everything: runs scenarios, collects metrics inline via Windows Performance Counters, and generates reports automatically. See [Self-Service Guide](self-service-guide.md) for full details.
+
+The rest of this page covers the **multi-VM lab environment** with Telegraf, InfluxDB, and Grafana.
+
+---
+
+## Lab Environment Overview
 
 ### What are the test scenarios?
 

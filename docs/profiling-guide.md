@@ -2,6 +2,20 @@
 
 This guide covers how to capture and analyze WPR (Windows Performance Recorder) traces to identify performance bottlenecks in the ActiveProbe sensor.
 
+## Self-Service Profiling (Quick Path)
+
+For most use cases, `Run-PerfTest.ps1` handles profiling end-to-end:
+
+```powershell
+.\Run-PerfTest.ps1 -EnableProfiling -SymbolsDir "C:\Symbols\v26.1.30.1"
+```
+
+This captures ETL traces per scenario, runs the ETL Analyzer, and generates a function-level CPU hotspot report automatically. See [Self-Service Guide](self-service-guide.md) for setup and PDB symbol instructions.
+
+The rest of this guide covers **advanced and manual WPR/WPA usage** for deeper investigation.
+
+---
+
 ## Prerequisites
 
 ### On your workstation (for analysis)
@@ -18,6 +32,8 @@ This guide covers how to capture and analyze WPR (Windows Performance Recorder) 
    - First part: internal symbol server for ActiveProbe PDBs
    - Second part: Microsoft public symbols for OS/kernel functions
    - `C:\Symbols` is a local cache (created automatically)
+
+   > **Tip**: If the internal symbol server is unavailable, you can download PDB files manually from the Jenkins build artifacts. Go to the [integration build page](https://jenkins-irelease.eng.cybereason.net/view/Release-Candidates/view/integration/job/msi-sensor-x64-release-build-integration/), find the matching build, download `output-x64.zip`, and extract it locally. Then set the symbol path to include that directory. See [Self-Service Guide](self-service-guide.md#pdb-symbols-for-function-name-resolution) for details.
 
 ### On test VMs (for capture)
 

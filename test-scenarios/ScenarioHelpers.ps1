@@ -4,10 +4,11 @@
 
 .DESCRIPTION
     Provides a standard interface for scenario execution:
-      - Start-Scenario    : Tags metrics, logs start time, optionally starts WPR trace
+      - Start-Scenario    : Tags metrics, logs start time, optionally starts WPR trace and metrics sampler
       - Add-ScenarioMetric: Records a key-value metric
-      - Complete-Scenario : Logs end time, stops WPR trace, writes summary
+      - Complete-Scenario : Logs end time, stops WPR trace, aggregates sampled metrics, writes summary
       - Enable-Profiling  : Enables WPR trace capture for the current session
+      - Enable-MetricsCollection : Enables background process metrics sampling
 
     This module is designed for future LoginVSI integration:
       - Each scenario is a self-contained script with standard parameters
@@ -19,6 +20,12 @@
       . "$PSScriptRoot\ScenarioHelpers.ps1"
 #>
 
+# ---------- Shared constants ----------
+$script:SensorProcessNames = @(
+    "minionhost", "ActiveConsole", "CrsSvc", "PylumLoader",
+    "AmSvc", "WscIfSvc", "ExecutionPreventionSvc", "CrAmTray", "Nnx", "CrDrvCtrl"
+)
+
 # ---------- Profiling state ----------
 # Uses env vars so child scenario scripts (invoked via &) inherit the state from Run-AllScenarios
 function Test-ProfilingEnabled {
@@ -29,6 +36,15 @@ function Get-ProfilingProfiles {
         return $env:PERF_TEST_PROFILING_PROFILES -split ","
     }
     return @("GeneralProfile", "DiskIO")
+}
+
+# ---------- Metrics collection state ----------
+function Test-MetricsCollectionEnabled {
+    return $env:PERF_TEST_COLLECT_METRICS -eq "1"
+}
+function Enable-MetricsCollection {
+    $env:PERF_TEST_COLLECT_METRICS = "1"
+    Write-Host "[OK] Inline process metrics collection enabled (5s interval)" -ForegroundColor Green
 }
 
 function Enable-Profiling {
@@ -94,11 +110,65 @@ function Start-Scenario {
         }
     }
 
+    # Start background metrics sampler if enabled
+    $script:MetricsSamplerJob = $null
+    if (Test-MetricsCollectionEnabled) {
+        $procNames = $script:SensorProcessNames
+        $script:MetricsSamplerJob = Start-Job -ScriptBlock {
+            param([string[]]$ProcessNames, [int]$IntervalMs)
+            $samples = [System.Collections.Generic.List[hashtable]]::new()
+            $prevCpuTimes = @{}
+
+            while ($true) {
+                $ts = Get-Date
+                $sampleEntry = @{ timestamp = $ts.ToString('o'); processes = @{} }
+
+                foreach ($pn in $ProcessNames) {
+                    $procs = Get-Process -Name $pn -ErrorAction SilentlyContinue
+                    if ($procs) {
+                        $totalCpuMs = ($procs | ForEach-Object { $_.TotalProcessorTime.TotalMilliseconds } | Measure-Object -Sum).Sum
+                        $totalWsMb  = [math]::Round(($procs | ForEach-Object { $_.WorkingSet64 } | Measure-Object -Sum).Sum / 1MB, 1)
+
+                        $cpuPercent = 0.0
+                        if ($prevCpuTimes.ContainsKey($pn)) {
+                            $deltaCpuMs = $totalCpuMs - $prevCpuTimes[$pn].cpuMs
+                            $deltaWallMs = ($ts - $prevCpuTimes[$pn].time).TotalMilliseconds
+                            $numCores = [Environment]::ProcessorCount
+                            if ($deltaWallMs -gt 0 -and $numCores -gt 0) {
+                                $cpuPercent = [math]::Round(($deltaCpuMs / $deltaWallMs / $numCores) * 100, 2)
+                            }
+                        }
+                        $prevCpuTimes[$pn] = @{ cpuMs = $totalCpuMs; time = $ts }
+
+                        $sampleEntry.processes[$pn] = @{
+                            cpuPercent = $cpuPercent
+                            memoryMb   = $totalWsMb
+                        }
+                    }
+                }
+
+                try {
+                    $sysCpu = (Get-Counter '\Processor(_Total)\% Processor Time' -ErrorAction Stop).CounterSamples[0].CookedValue
+                    $sampleEntry['systemCpuPercent'] = [math]::Round($sysCpu, 2)
+                } catch {
+                    $sampleEntry['systemCpuPercent'] = -1
+                }
+
+                $samples.Add($sampleEntry)
+                Start-Sleep -Milliseconds $IntervalMs
+            }
+
+            return $samples
+        } -ArgumentList @(,$procNames), 5000
+        Write-Host "[OK] Background metrics sampler started" -ForegroundColor Green
+    }
+
     Write-Host "`n========================================" -ForegroundColor Cyan
     Write-Host " Scenario: $Name" -ForegroundColor Cyan
     if ($Description) { Write-Host " $Description" -ForegroundColor Gray }
     Write-Host " Host: $env:COMPUTERNAME" -ForegroundColor White
     Write-Host " Profiling: $(if (Test-ProfilingEnabled) { 'ON' } else { 'OFF' })" -ForegroundColor White
+    Write-Host " Metrics: $(if (Test-MetricsCollectionEnabled) { 'ON' } else { 'OFF' })" -ForegroundColor White
     Write-Host " Started: $($script:ScenarioStart.ToString('yyyy-MM-dd HH:mm:ss'))" -ForegroundColor White
     Write-Host "========================================`n" -ForegroundColor Cyan
 }
@@ -116,6 +186,72 @@ function Add-ScenarioMetric {
 function Complete-Scenario {
     $endTime = Get-Date
     $duration = ($endTime - $script:ScenarioStart).TotalSeconds
+
+    # Stop background metrics sampler and aggregate results
+    if ($script:MetricsSamplerJob) {
+        Stop-Job -Job $script:MetricsSamplerJob -ErrorAction SilentlyContinue
+        $rawSamples = Receive-Job -Job $script:MetricsSamplerJob -ErrorAction SilentlyContinue
+        Remove-Job -Job $script:MetricsSamplerJob -Force -ErrorAction SilentlyContinue
+
+        if ($rawSamples -and $rawSamples.Count -gt 1) {
+            $skipFirst = if ($rawSamples.Count -gt 2) { 1 } else { 0 }
+            $validSamples = @($rawSamples | Select-Object -Skip $skipFirst)
+            $sampleCount = $validSamples.Count
+            Write-Host "[OK] Metrics sampler stopped - collected $sampleCount samples" -ForegroundColor Green
+
+            $processMetrics = @{}
+            $sysCpuValues = [System.Collections.Generic.List[double]]::new()
+
+            foreach ($sample in $validSamples) {
+                if ($sample.systemCpuPercent -ge 0) {
+                    $sysCpuValues.Add($sample.systemCpuPercent)
+                }
+                if ($sample.processes) {
+                    foreach ($procName in $sample.processes.Keys) {
+                        if (-not $processMetrics.ContainsKey($procName)) {
+                            $processMetrics[$procName] = @{
+                                cpuValues = [System.Collections.Generic.List[double]]::new()
+                                memValues = [System.Collections.Generic.List[double]]::new()
+                            }
+                        }
+                        $processMetrics[$procName].cpuValues.Add($sample.processes[$procName].cpuPercent)
+                        $processMetrics[$procName].memValues.Add($sample.processes[$procName].memoryMb)
+                    }
+                }
+            }
+
+            $procSummaries = @{}
+            foreach ($pn in $processMetrics.Keys) {
+                $cpu = $processMetrics[$pn].cpuValues
+                $mem = $processMetrics[$pn].memValues
+                $procSummaries[$pn] = @{
+                    avg_cpu_percent  = [math]::Round(($cpu | Measure-Object -Average).Average, 2)
+                    peak_cpu_percent = [math]::Round(($cpu | Measure-Object -Maximum).Maximum, 2)
+                    avg_memory_mb    = [math]::Round(($mem | Measure-Object -Average).Average, 1)
+                    peak_memory_mb   = [math]::Round(($mem | Measure-Object -Maximum).Maximum, 1)
+                }
+            }
+
+            Add-ScenarioMetric -Key "process_metrics" -Value $procSummaries
+            Add-ScenarioMetric -Key "metrics_sample_count" -Value $sampleCount
+
+            if ($sysCpuValues.Count -gt 0) {
+                Add-ScenarioMetric -Key "system_avg_cpu_percent" -Value ([math]::Round(($sysCpuValues | Measure-Object -Average).Average, 2))
+                Add-ScenarioMetric -Key "system_peak_cpu_percent" -Value ([math]::Round(($sysCpuValues | Measure-Object -Maximum).Maximum, 2))
+            }
+
+            $totalSensorCpu = 0.0
+            foreach ($pn in $script:SensorProcessNames) {
+                if ($procSummaries.ContainsKey($pn)) {
+                    $totalSensorCpu += $procSummaries[$pn].avg_cpu_percent
+                }
+            }
+            Add-ScenarioMetric -Key "total_sensor_avg_cpu_percent" -Value ([math]::Round($totalSensorCpu, 2))
+        } else {
+            Write-Host "[WARN] Metrics sampler returned no usable data" -ForegroundColor Yellow
+        }
+        $script:MetricsSamplerJob = $null
+    }
 
     # Stop WPR trace if profiling was active
     $profilingEnabled = Test-ProfilingEnabled
@@ -142,6 +278,8 @@ function Complete-Scenario {
     Add-ScenarioMetric -Key "start_time" -Value $script:ScenarioStart.ToString('o')
     Add-ScenarioMetric -Key "end_time" -Value $endTime.ToString('o')
     Add-ScenarioMetric -Key "profiling_enabled" -Value $profilingEnabled
+    Add-ScenarioMetric -Key "metrics_collection_enabled" -Value (Test-MetricsCollectionEnabled)
+    Add-ScenarioMetric -Key "num_cores" -Value ([Environment]::ProcessorCount)
 
     Write-Host "`n========================================" -ForegroundColor Green
     Write-Host " Scenario Complete: $($script:ScenarioName)" -ForegroundColor Green

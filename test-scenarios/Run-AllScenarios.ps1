@@ -63,7 +63,8 @@ param(
     [string[]]$OnlyScenarios = @(),
     [switch]$EnableProfiling,
     [string[]]$ProfilingProfiles = @("GeneralProfile", "DiskIO"),
-    [switch]$LightMode
+    [switch]$LightMode,
+    [switch]$CollectMetrics
 )
 
 $ErrorActionPreference = "Stop"
@@ -208,6 +209,13 @@ else {
     Remove-Item Env:PERF_TEST_PROFILING_PROFILES -ErrorAction SilentlyContinue
 }
 
+if ($CollectMetrics) {
+    Enable-MetricsCollection
+}
+else {
+    $env:PERF_TEST_COLLECT_METRICS = "0"
+}
+
 # ---------- Pre-flight ----------
 $totalCount = $scenariosToRun.Count
 $estimatedMinutes = [math]::Round(($totalCount * 13 + $totalCount * $PauseBetweenSeconds / 60), 0)
@@ -225,6 +233,9 @@ if ($EnableProfiling) {
     Write-Host "  Profiling         : ON ($($ProfilingProfiles -join ', '))" -ForegroundColor Yellow
     Write-Host "  Traces dir        : C:\PerfTest\traces\" -ForegroundColor White
     Write-Host "  Est. trace size   : ~${estTraceGB} GB total" -ForegroundColor White
+}
+if ($CollectMetrics) {
+    Write-Host "  Metrics collection: ON (5s interval, per-process CPU & memory)" -ForegroundColor Yellow
 }
 Write-Host "========================================================" -ForegroundColor Cyan
 Write-Host ""
