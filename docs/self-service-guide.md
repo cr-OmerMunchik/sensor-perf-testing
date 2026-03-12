@@ -54,17 +54,42 @@ Verify: `wpr.exe -status` should return without error.
 
 ### 1. Set up the target machine
 
-**Enable SSH Server** (needed if you want to manage the VM remotely from your workstation):
+**Install and enable SSH Server** (needed if you want to manage the VM remotely from your workstation).
+Run the following in an **elevated PowerShell** (right-click PowerShell > "Run as administrator") on the target VM.
+
+**Option A -- winget (recommended):**
 
 ```powershell
-# Run on the target VM in an elevated PowerShell
-# (right-click PowerShell > "Run as administrator")
-Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+winget install "openssh preview" --accept-package-agreements --accept-source-agreements
+```
+
+**Option B -- Download from GitHub (works on any Windows version, no winget needed):**
+
+```powershell
+# Download and extract Win32-OpenSSH
+$url = (Invoke-RestMethod https://api.github.com/repos/PowerShell/Win32-OpenSSH/releases/latest).assets |
+    Where-Object Name -like 'OpenSSH-Win64-v*.msi' | Select-Object -First 1 -ExpandProperty browser_download_url
+$msi = "$env:TEMP\openssh.msi"
+Invoke-WebRequest -Uri $url -OutFile $msi
+msiexec /i $msi ADDLOCAL=Server /qn
+Remove-Item $msi
+```
+
+**After installing (either option), configure and verify the service:**
+
+```powershell
 Start-Service sshd
 Set-Service -Name sshd -StartupType Automatic
+
 New-NetFirewallRule -Name "OpenSSH-Server" -DisplayName "OpenSSH Server (sshd)" `
     -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 -ErrorAction SilentlyContinue
+
+# Verify -- should show sshd running
+Get-Service sshd
 ```
+
+> **Note:** Do **not** use `Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0` --
+> on many Windows builds it reports success but does not actually install the service.
 
 **Install Git** (on your workstation, if not already installed):
 
