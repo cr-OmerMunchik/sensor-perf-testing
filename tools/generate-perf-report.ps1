@@ -1144,7 +1144,19 @@ function Build-SelfServiceReport {
 
     $scenarioResults = @()
     foreach ($f in $jsonFiles) {
-        $data = Get-Content $f.FullName -Raw | ConvertFrom-Json
+        $data = $null
+        for ($retry = 0; $retry -lt 5; $retry++) {
+            try {
+                $fs = [System.IO.FileStream]::new($f.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                $sr = [System.IO.StreamReader]::new($fs)
+                $raw = $sr.ReadToEnd()
+                $sr.Close(); $fs.Close()
+                $data = $raw | ConvertFrom-Json
+                break
+            } catch {
+                if ($retry -lt 4) { Start-Sleep -Seconds 2 } else { throw }
+            }
+        }
         $scenarioResults += $data
     }
 

@@ -181,6 +181,9 @@ if ($SkipReports) {
 Write-Host ""
 Write-Host "[Phase 3] Generating reports..." -ForegroundColor Cyan
 
+Start-Sleep -Seconds 3
+[GC]::Collect()
+
 $resultFiles = Get-ChildItem $resultsDir -Filter "*.json" -File | Sort-Object Name
 if ($resultFiles.Count -eq 0) {
     Write-Host "[WARN] No scenario result JSON files found in $resultsDir. Skipping reports." -ForegroundColor Yellow
