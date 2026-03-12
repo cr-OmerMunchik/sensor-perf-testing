@@ -36,7 +36,7 @@
     Number of CPU cores on the test machine (for CPU% calculations). Auto-detected if omitted.
 
 .PARAMETER ReportsDir
-    Directory to write reports to. Default: <repo>\reports
+    Directory to write reports to. Default: C:\PerfTest\reports
 
 .PARAMETER SymbolsDir
     Path to PDB symbol files for ETL function name resolution. If not provided, functions
@@ -91,7 +91,7 @@ $tracesDir = "C:\PerfTest\traces"
 $timestamp = Get-Date -Format "yyyy-MM-dd"
 
 if ($NumCores -le 0) { $NumCores = [Environment]::ProcessorCount }
-if (-not $ReportsDir) { $ReportsDir = Join-Path $baseDir "reports" }
+if (-not $ReportsDir) { $ReportsDir = "C:\PerfTest\reports" }
 
 # ── Preflight checks ──
 

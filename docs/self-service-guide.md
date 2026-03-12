@@ -2,14 +2,18 @@
 
 Run sensor performance tests and generate reports on **any Windows VM or machine**.
 
+> **Important**: Unless stated otherwise, all commands and installations in this guide should be run **on the target test machine** (the VM or workstation where the sensor is installed), not on your development machine.
+
 ---
 
 ## Prerequisites
 
+All prerequisites must be installed **on the target machine**.
+
 | Requirement | Details |
 |---|---|
 | **OS** | Windows 10/11 or Windows Server 2016+ |
-| **PowerShell** | 5.1+ (built-in) -- run as **Administrator** |
+| **PowerShell** | 5.1+ (built-in) -- must be run as **Administrator** (right-click PowerShell > "Run as administrator") |
 | **CPU cores** | 2+ (2-core VMs use Light mode by default) |
 | **.NET SDK** | 8.0+ -- only needed if you enable ETL profiling |
 | **wpr.exe** | Windows Performance Toolkit -- only needed for ETL profiling |
@@ -17,7 +21,7 @@ Run sensor performance tests and generate reports on **any Windows VM or machine
 
 ### Installing .NET SDK (required for ETL profiling)
 
-The ETL Analyzer is a .NET application. You need the .NET 8 SDK to build and run it.
+Install **on the target machine**. The ETL Analyzer is a .NET application that needs the .NET 8 SDK.
 
 ```powershell
 # Option 1: Install via winget
@@ -32,6 +36,8 @@ dotnet --version
 ```
 
 ### Installing Windows Performance Toolkit (required for ETL profiling)
+
+Install **on the target machine**.
 
 ```powershell
 # Download Windows ADK from:
@@ -50,7 +56,8 @@ Verify: `wpr.exe -status` should return without error.
 **Enable SSH Server** (needed if you want to manage the VM remotely from your workstation):
 
 ```powershell
-# Run on the target VM (elevated PowerShell)
+# Run on the target VM in an elevated PowerShell
+# (right-click PowerShell > "Run as administrator")
 Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 Start-Service sshd
 Set-Service -Name sshd -StartupType Automatic
@@ -58,7 +65,7 @@ New-NetFirewallRule -Name "OpenSSH-Server" -DisplayName "OpenSSH Server (sshd)" 
     -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 -ErrorAction SilentlyContinue
 ```
 
-**Install Git** (if not already installed):
+**Install Git** (on your workstation, if not already installed):
 
 ```powershell
 winget install Git.Git
@@ -66,15 +73,7 @@ winget install Git.Git
 
 ### 2. Get the test framework
 
-**Option A -- Clone directly on the target machine (recommended):**
-
-```powershell
-cd C:\
-git clone https://github.com/cr-OmerMunchik/sensor-perf-testing.git
-cd sensor-perf-testing
-```
-
-**Option B -- Clone on your workstation and SCP to a remote VM:**
+Clone the repo **on your workstation** and copy it to the target machine via SCP:
 
 ```powershell
 # On your workstation
@@ -82,12 +81,14 @@ git clone https://github.com/cr-OmerMunchik/sensor-perf-testing.git
 scp -r .\sensor-perf-testing admin@TARGET_VM:C:\sensor-perf-testing
 ```
 
+Replace `TARGET_VM` with the IP or hostname of your target machine, and `admin` with the username.
+
 ### 3. Run the tests
 
-Open an **elevated PowerShell** on the target machine and run:
+Open an **elevated PowerShell** on the target machine (right-click PowerShell > **"Run as administrator"**) and run:
 
 ```powershell
-cd C:\PerfTest\sensor-perf-testing
+cd C:\sensor-perf-testing
 
 # Default run -- Light mode (~45 min, suitable for any machine)
 .\Run-PerfTest.ps1
@@ -107,7 +108,7 @@ cd C:\PerfTest\sensor-perf-testing
 
 ### 4. Collect reports
 
-Reports are saved to the `reports/` directory:
+Reports are saved to `C:\PerfTest\reports\` on the target machine:
 
 | File | Description |
 |---|---|
@@ -186,7 +187,7 @@ Deep CPU analysis from ETL traces:
 | `-PauseBetweenSeconds` | int | 30/60 | Pause between scenarios (30 light, 60 heavy) |
 | `-SkipReports` | switch | off | Run scenarios but skip report generation |
 | `-NumCores` | int | auto | CPU core count for % calculations |
-| `-ReportsDir` | string | `./reports` | Output directory for reports |
+| `-ReportsDir` | string | `C:\PerfTest\reports` | Output directory for reports |
 | `-SymbolsDir` | string | -- | Path to PDB files for ETL function names |
 | `-GenerateConfluence` | switch | off | Also produce Confluence-compatible HTML |
 | `-ReportTag` | string | -- | Tag appended to report filenames (e.g., version) |
@@ -254,7 +255,7 @@ C:\PerfTest\
 │   └── ...
 └── ...
 
-<repo>\reports\
+C:\PerfTest\reports\
 ├── sensor-perf-report-2026-02-22.html
 ├── sensor-perf-report-2026-02-22.confluence.html
 ├── etl-cpu-hotspots-report-2026-02-22.html
@@ -277,7 +278,7 @@ C:\PerfTest\
 
 ```powershell
 .\tools\generate-perf-report.ps1 -ScenarioResultsDir "C:\PerfTest\results" -NumCores 2 `
-    -OutputPath ".\reports\my-report.html" -SkipInfluxDB -SkipEtl
+    -OutputPath "C:\PerfTest\reports\my-report.html" -SkipInfluxDB -SkipEtl
 ```
 
 - **Compare versions**: Run on the same VM with different sensor versions, save reports with `-ReportTag`:

@@ -110,15 +110,24 @@ function Start-Scenario {
         }
     }
 
-    # Start background metrics sampler if enabled
-    $script:MetricsSamplerJob = $null
+    # Start background metrics sampler if enabled (uses in-process runspace
+    # to inherit the caller's security context and see all processes)
+    $script:MetricsSamplerRunspace = $null
+    $script:MetricsSamplerPipeline = $null
+    $script:MetricsSamplerOutput   = $null
     if (Test-MetricsCollectionEnabled) {
         $procNames = $script:SensorProcessNames
-        $script:MetricsSamplerJob = Start-Job -ScriptBlock {
-            param([string[]]$ProcessNames, [int]$IntervalMs)
-            $samples = [System.Collections.Generic.List[hashtable]]::new()
-            $prevCpuTimes = @{}
+        $script:MetricsSamplerOutput = [System.Collections.Concurrent.ConcurrentBag[hashtable]]::new()
+        $outputBag = $script:MetricsSamplerOutput
 
+        $rs = [runspacefactory]::CreateRunspace()
+        $rs.Open()
+        $rs.SessionStateProxy.SetVariable('ProcessNames', $procNames)
+        $rs.SessionStateProxy.SetVariable('IntervalMs', 5000)
+        $rs.SessionStateProxy.SetVariable('OutputBag', $outputBag)
+
+        $ps = [powershell]::Create().AddScript({
+            $prevCpuTimes = @{}
             while ($true) {
                 $ts = Get-Date
                 $sampleEntry = @{ timestamp = $ts.ToString('o'); processes = @{} }
@@ -154,12 +163,14 @@ function Start-Scenario {
                     $sampleEntry['systemCpuPercent'] = -1
                 }
 
-                $samples.Add($sampleEntry)
+                $OutputBag.Add($sampleEntry)
                 Start-Sleep -Milliseconds $IntervalMs
             }
-
-            return $samples
-        } -ArgumentList @(,$procNames), 5000
+        })
+        $ps.Runspace = $rs
+        $script:MetricsSamplerPipeline = $ps
+        $script:MetricsSamplerRunspace = $rs
+        $ps.BeginInvoke() | Out-Null
         Write-Host "[OK] Background metrics sampler started" -ForegroundColor Green
     }
 
@@ -188,12 +199,15 @@ function Complete-Scenario {
     $duration = ($endTime - $script:ScenarioStart).TotalSeconds
 
     # Stop background metrics sampler and aggregate results
-    if ($script:MetricsSamplerJob) {
-        Stop-Job -Job $script:MetricsSamplerJob -ErrorAction SilentlyContinue
-        $rawSamples = Receive-Job -Job $script:MetricsSamplerJob -ErrorAction SilentlyContinue
-        Remove-Job -Job $script:MetricsSamplerJob -Force -ErrorAction SilentlyContinue
+    if ($script:MetricsSamplerPipeline) {
+        $script:MetricsSamplerPipeline.Stop()
+        $script:MetricsSamplerPipeline.Dispose()
+        $script:MetricsSamplerRunspace.Close()
+        $script:MetricsSamplerRunspace.Dispose()
+        $rawSamples = @($script:MetricsSamplerOutput.ToArray())
 
         if ($rawSamples -and $rawSamples.Count -gt 1) {
+            $rawSamples = $rawSamples | Sort-Object { $_.timestamp }
             $skipFirst = if ($rawSamples.Count -gt 2) { 1 } else { 0 }
             $validSamples = @($rawSamples | Select-Object -Skip $skipFirst)
             $sampleCount = $validSamples.Count
@@ -250,7 +264,9 @@ function Complete-Scenario {
         } else {
             Write-Host "[WARN] Metrics sampler returned no usable data" -ForegroundColor Yellow
         }
-        $script:MetricsSamplerJob = $null
+        $script:MetricsSamplerPipeline = $null
+        $script:MetricsSamplerRunspace = $null
+        $script:MetricsSamplerOutput   = $null
     }
 
     # Stop WPR trace if profiling was active
@@ -260,15 +276,26 @@ function Complete-Scenario {
         $etlFile = "C:\PerfTest\traces\$($script:ScenarioName)_${env:COMPUTERNAME}_${timestamp}.etl"
 
         Write-Host "Stopping WPR trace..." -ForegroundColor Cyan
-        & wpr.exe -stop $etlFile
-        if ($LASTEXITCODE -eq 0) {
+        $wprSuccess = $false
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+            & wpr.exe -stop $etlFile 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                $wprSuccess = $true
+                break
+            }
+            if ($attempt -lt 3) {
+                Write-Host "[WARN] WPR stop attempt $attempt failed (exit code: $LASTEXITCODE). Retrying in 5s..." -ForegroundColor Yellow
+                Start-Sleep -Seconds 5
+            }
+        }
+        if ($wprSuccess) {
             $fileSize = [math]::Round((Get-Item $etlFile).Length / 1MB, 1)
             Write-Host "[OK] Trace saved: $etlFile ($fileSize MB)" -ForegroundColor Green
             Add-ScenarioMetric -Key "wpr_trace_file" -Value $etlFile
             Add-ScenarioMetric -Key "wpr_trace_size_mb" -Value $fileSize
         }
         else {
-            Write-Host "[WARN] WPR failed to stop (exit code: $LASTEXITCODE)." -ForegroundColor Yellow
+            Write-Host "[WARN] WPR failed to stop after 3 attempts (exit code: $LASTEXITCODE)." -ForegroundColor Yellow
         }
     }
 
