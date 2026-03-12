@@ -30,7 +30,7 @@ cd sensor-perf-testing
 
 This runs the test scenarios with inline metrics collection (Windows Performance Counters, 5-second interval), then generates HTML reports in `C:\PerfTest\reports\`:
 
-- **Performance report** -- per-process CPU and memory (average/peak) for each scenario
+- **Performance report** -- per-process CPU, memory, system memory, disk I/O, process uptime, DB size, KPI assessment with executive summary and conclusions
 - **ETL profiling report** -- function-level CPU hotspots within sensor modules (requires `-EnableProfiling`)
 
 > **Full guide**: [docs/self-service-guide.md](docs/self-service-guide.md)

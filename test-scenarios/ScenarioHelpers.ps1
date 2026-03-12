@@ -120,14 +120,34 @@ function Start-Scenario {
         $script:MetricsSamplerOutput = [System.Collections.Concurrent.ConcurrentBag[hashtable]]::new()
         $outputBag = $script:MetricsSamplerOutput
 
+        # Discover sensor DB path once before starting the sampler
+        $dbPath = $null
+        $dbSearchPaths = @(
+            "C:\ProgramData\Cybereason\ActiveProbe\data",
+            "C:\ProgramData\Crs",
+            "C:\ProgramData\Cybereason"
+        )
+        foreach ($sp in $dbSearchPaths) {
+            if (Test-Path $sp) {
+                $found = Get-ChildItem $sp -Filter "*.db" -Recurse -ErrorAction SilentlyContinue | Sort-Object Length -Descending | Select-Object -First 1
+                if ($found) { $dbPath = $found.FullName; break }
+            }
+        }
+
         $rs = [runspacefactory]::CreateRunspace()
         $rs.Open()
         $rs.SessionStateProxy.SetVariable('ProcessNames', $procNames)
         $rs.SessionStateProxy.SetVariable('IntervalMs', 5000)
         $rs.SessionStateProxy.SetVariable('OutputBag', $outputBag)
+        $rs.SessionStateProxy.SetVariable('DbFilePath', $dbPath)
 
         $ps = [powershell]::Create().AddScript({
             $prevCpuTimes = @{}
+            $counterPaths = @(
+                '\Processor(_Total)\% Processor Time',
+                '\Memory\Available MBytes',
+                '\PhysicalDisk(_Total)\Disk Write Bytes/sec'
+            )
             while ($true) {
                 $ts = Get-Date
                 $sampleEntry = @{ timestamp = $ts.ToString('o'); processes = @{} }
@@ -149,18 +169,40 @@ function Start-Scenario {
                         }
                         $prevCpuTimes[$pn] = @{ cpuMs = $totalCpuMs; time = $ts }
 
+                        $uptimeMin = -1
+                        $pid_ = -1
+                        try {
+                            $oldest = $procs | Sort-Object StartTime | Select-Object -First 1
+                            $uptimeMin = [math]::Round(($ts - $oldest.StartTime).TotalMinutes, 1)
+                            $pid_ = $oldest.Id
+                        } catch {}
+
                         $sampleEntry.processes[$pn] = @{
                             cpuPercent = $cpuPercent
                             memoryMb   = $totalWsMb
+                            uptimeMin  = $uptimeMin
+                            pid        = $pid_
                         }
                     }
                 }
 
                 try {
-                    $sysCpu = (Get-Counter '\Processor(_Total)\% Processor Time' -ErrorAction Stop).CounterSamples[0].CookedValue
-                    $sampleEntry['systemCpuPercent'] = [math]::Round($sysCpu, 2)
+                    $counters = (Get-Counter $counterPaths -ErrorAction Stop).CounterSamples
+                    $sampleEntry['systemCpuPercent']  = [math]::Round($counters[0].CookedValue, 2)
+                    $sampleEntry['availableMemMb']    = [math]::Round($counters[1].CookedValue, 0)
+                    $sampleEntry['diskWriteKBps']     = [math]::Round($counters[2].CookedValue / 1024, 1)
                 } catch {
                     $sampleEntry['systemCpuPercent'] = -1
+                    $sampleEntry['availableMemMb']   = -1
+                    $sampleEntry['diskWriteKBps']    = -1
+                }
+
+                if ($DbFilePath) {
+                    try {
+                        $sampleEntry['dbSizeMb'] = [math]::Round((Get-Item $DbFilePath -ErrorAction Stop).Length / 1MB, 1)
+                    } catch {
+                        $sampleEntry['dbSizeMb'] = -1
+                    }
                 }
 
                 $OutputBag.Add($sampleEntry)
@@ -215,10 +257,23 @@ function Complete-Scenario {
 
             $processMetrics = @{}
             $sysCpuValues = [System.Collections.Generic.List[double]]::new()
+            $availMemValues = [System.Collections.Generic.List[double]]::new()
+            $diskWriteValues = [System.Collections.Generic.List[double]]::new()
+            $lastDbSizeMb = -1
+            $processPids = @{}
 
             foreach ($sample in $validSamples) {
                 if ($sample.systemCpuPercent -ge 0) {
                     $sysCpuValues.Add($sample.systemCpuPercent)
+                }
+                if ($sample.availableMemMb -ge 0) {
+                    $availMemValues.Add($sample.availableMemMb)
+                }
+                if ($sample.diskWriteKBps -ge 0) {
+                    $diskWriteValues.Add($sample.diskWriteKBps)
+                }
+                if ($sample.dbSizeMb -gt 0) {
+                    $lastDbSizeMb = $sample.dbSizeMb
                 }
                 if ($sample.processes) {
                     foreach ($procName in $sample.processes.Keys) {
@@ -230,6 +285,15 @@ function Complete-Scenario {
                         }
                         $processMetrics[$procName].cpuValues.Add($sample.processes[$procName].cpuPercent)
                         $processMetrics[$procName].memValues.Add($sample.processes[$procName].memoryMb)
+                        if ($sample.processes[$procName].pid -gt 0) {
+                            if (-not $processPids.ContainsKey($procName)) {
+                                $processPids[$procName] = [System.Collections.Generic.List[int]]::new()
+                            }
+                            $curPid = [int]$sample.processes[$procName].pid
+                            if ($processPids[$procName].Count -eq 0 -or $processPids[$procName][$processPids[$procName].Count - 1] -ne $curPid) {
+                                $processPids[$procName].Add($curPid)
+                            }
+                        }
                     }
                 }
             }
@@ -238,11 +302,19 @@ function Complete-Scenario {
             foreach ($pn in $processMetrics.Keys) {
                 $cpu = $processMetrics[$pn].cpuValues
                 $mem = $processMetrics[$pn].memValues
+                $restarts = if ($processPids.ContainsKey($pn)) { [math]::Max(0, $processPids[$pn].Count - 1) } else { 0 }
+                $lastSample = $validSamples[-1]
+                $uptimeMin = -1
+                if ($lastSample.processes -and $lastSample.processes[$pn] -and $lastSample.processes[$pn].uptimeMin -ge 0) {
+                    $uptimeMin = $lastSample.processes[$pn].uptimeMin
+                }
                 $procSummaries[$pn] = @{
                     avg_cpu_percent  = [math]::Round(($cpu | Measure-Object -Average).Average, 2)
                     peak_cpu_percent = [math]::Round(($cpu | Measure-Object -Maximum).Maximum, 2)
                     avg_memory_mb    = [math]::Round(($mem | Measure-Object -Average).Average, 1)
                     peak_memory_mb   = [math]::Round(($mem | Measure-Object -Maximum).Maximum, 1)
+                    uptime_minutes   = $uptimeMin
+                    restarts         = $restarts
                 }
             }
 
@@ -252,6 +324,25 @@ function Complete-Scenario {
             if ($sysCpuValues.Count -gt 0) {
                 Add-ScenarioMetric -Key "system_avg_cpu_percent" -Value ([math]::Round(($sysCpuValues | Measure-Object -Average).Average, 2))
                 Add-ScenarioMetric -Key "system_peak_cpu_percent" -Value ([math]::Round(($sysCpuValues | Measure-Object -Maximum).Maximum, 2))
+            }
+
+            if ($availMemValues.Count -gt 0) {
+                $totalMemMb = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1MB, 0)
+                Add-ScenarioMetric -Key "system_total_memory_mb" -Value $totalMemMb
+                $avgAvail = [math]::Round(($availMemValues | Measure-Object -Average).Average, 0)
+                $minAvail = [math]::Round(($availMemValues | Measure-Object -Minimum).Minimum, 0)
+                Add-ScenarioMetric -Key "system_available_memory_avg_mb" -Value $avgAvail
+                Add-ScenarioMetric -Key "system_used_memory_avg_mb" -Value ($totalMemMb - $avgAvail)
+                Add-ScenarioMetric -Key "system_used_memory_peak_mb" -Value ($totalMemMb - $minAvail)
+            }
+
+            if ($diskWriteValues.Count -gt 0) {
+                Add-ScenarioMetric -Key "disk_write_avg_kbps" -Value ([math]::Round(($diskWriteValues | Measure-Object -Average).Average, 1))
+                Add-ScenarioMetric -Key "disk_write_peak_kbps" -Value ([math]::Round(($diskWriteValues | Measure-Object -Maximum).Maximum, 1))
+            }
+
+            if ($lastDbSizeMb -gt 0) {
+                Add-ScenarioMetric -Key "sensor_db_size_mb" -Value $lastDbSizeMb
             }
 
             $totalSensorCpu = 0.0
