@@ -1424,8 +1424,14 @@ $($script:SharedCss)
         if ($hasUptimeOrDb) {
             [void]$sb.AppendLine("<h2>Sensor Process Uptime &amp; DB Size</h2>")
             [void]$sb.AppendLine(@"
-<div class="callout"><strong>What this shows:</strong> Process uptime (how long main sensor processes have been running) and correlation DB size at each scenario. Process restarts during a scenario indicate stability issues.</div>
+<div class="callout"><strong>What this shows:</strong> Process uptime as percentage of the total test suite duration, and correlation DB size at each scenario. Process restarts during a scenario indicate stability issues.</div>
 "@)
+            # Compute total suite duration in minutes for uptime %
+            $suiteDurMin = 0
+            if ($firstStart -and $lastEnd) {
+                $suiteDurMin = ([datetime]$lastEnd - [datetime]$firstStart).TotalMinutes
+            }
+
             $mainProcs = @("minionhost", "ActiveConsole")
             [void]$sb.AppendLine("<table><tr><th>Scenario</th>")
             foreach ($mp in $mainProcs) { [void]$sb.AppendLine("<th>$mp Uptime</th><th>$mp Restarts</th>") }
@@ -1438,12 +1444,13 @@ $($script:SharedCss)
                     if ($pm -is [PSCustomObject] -and $pm.PSObject.Properties[$mp]) { $procData = $pm.$mp }
                     elseif ($pm -is [hashtable] -and $pm.ContainsKey($mp)) { $procData = $pm[$mp] }
                     if ($procData -and $procData.uptime_minutes -ge 0) {
-                        $uMin = [math]::Round([double]$procData.uptime_minutes, 0)
-                        if ($uMin -ge 60) {
-                            $hrs = [math]::Floor($uMin / 60); $mins = $uMin % 60
-                            [void]$sb.AppendLine("<td class=`"numeric`">${hrs}h ${mins}m</td>")
+                        $uMin = [double]$procData.uptime_minutes
+                        if ($suiteDurMin -gt 0) {
+                            $uptimePct = [math]::Round(($uMin / $suiteDurMin) * 100, 0)
+                            $uptimePct = [math]::Min($uptimePct, 100)
+                            [void]$sb.AppendLine("<td class=`"numeric`">${uptimePct}%</td>")
                         } else {
-                            [void]$sb.AppendLine("<td class=`"numeric`">${uMin}m</td>")
+                            [void]$sb.AppendLine("<td class=`"numeric`">-</td>")
                         }
                         $restartCount = if ($procData.restarts) { [int]$procData.restarts } else { 0 }
                         $restartColor = if ($restartCount -gt 0) { "color:#e74c3c; font-weight:bold;" } else { "" }
@@ -1491,19 +1498,15 @@ $($script:SharedCss)
 
     # ── Executive Summary (auto-generated findings) ──
     $findings = [System.Collections.Generic.List[string]]::new()
-    $overallSeverity = "ok"
+
+    $scenariosWithMetrics2 = @($scenarioResults | Where-Object { $_.process_metrics })
 
     foreach ($sr in $scenarioResults) {
-        if ($sr.total_sensor_avg_cpu_percent -and [double]$sr.total_sensor_avg_cpu_percent -ge 15) {
-            $findings.Add("Sensor CPU averaged <strong>$([math]::Round([double]$sr.total_sensor_avg_cpu_percent, 1))%</strong> during <code>$($sr.scenario)</code> (threshold: 15%)")
-            $overallSeverity = "crit"
-        } elseif ($sr.total_sensor_avg_cpu_percent -and [double]$sr.total_sensor_avg_cpu_percent -ge 5) {
-            $findings.Add("Sensor CPU averaged <strong>$([math]::Round([double]$sr.total_sensor_avg_cpu_percent, 1))%</strong> during <code>$($sr.scenario)</code> (threshold: 5%)")
-            if ($overallSeverity -ne "crit") { $overallSeverity = "warn" }
+        if ($sr.total_sensor_avg_cpu_percent) {
+            $findings.Add("Sensor CPU averaged <strong>$([math]::Round([double]$sr.total_sensor_avg_cpu_percent, 1))%</strong> during <code>$($sr.scenario)</code>")
         }
     }
 
-    $scenariosWithMetrics2 = @($scenarioResults | Where-Object { $_.process_metrics })
     foreach ($sr in $scenariosWithMetrics2) {
         $pm = $sr.process_metrics
         $totalMem = 0.0
@@ -1513,50 +1516,30 @@ $($script:SharedCss)
             elseif ($pm -is [hashtable] -and $pm.ContainsKey($pn)) { $procData = $pm[$pn] }
             if ($procData) { $totalMem += [double]$procData.peak_memory_mb }
         }
-        if ($totalMem -ge 500) {
-            $findings.Add("Sensor peak memory reached <strong>$([math]::Round($totalMem, 0)) MB</strong> during <code>$($sr.scenario)</code> (threshold: 500 MB)")
-            $overallSeverity = "crit"
-        } elseif ($totalMem -ge 350) {
-            $findings.Add("Sensor peak memory reached <strong>$([math]::Round($totalMem, 0)) MB</strong> during <code>$($sr.scenario)</code> (threshold: 350 MB)")
-            if ($overallSeverity -ne "crit") { $overallSeverity = "warn" }
+        if ($totalMem -gt 0) {
+            $findings.Add("Sensor peak memory was <strong>$([math]::Round($totalMem, 0)) MB</strong> during <code>$($sr.scenario)</code>")
         }
     }
 
     foreach ($sr in $scenarioResults) {
-        if ($sr.disk_write_peak_kbps -and [double]$sr.disk_write_peak_kbps -ge 100000) {
+        if ($sr.disk_write_peak_kbps -and [double]$sr.disk_write_peak_kbps -ge 10000) {
             $findings.Add("Disk write peaked at <strong>$([math]::Round([double]$sr.disk_write_peak_kbps / 1024, 1)) MB/s</strong> during <code>$($sr.scenario)</code>")
-            if ($overallSeverity -ne "crit") { $overallSeverity = "warn" }
         }
-    }
-
-    $summaryClass = switch ($overallSeverity) { "crit" { "summary-crit" } "warn" { "summary-warn" } default { "summary-ok" } }
-    $summaryIcon = switch ($overallSeverity) { "crit" { "FAIL" } "warn" { "WARNING" } default { "PASS" } }
-    $summaryText = switch ($overallSeverity) {
-        "crit" { "One or more KPI thresholds were exceeded. Review the findings below." }
-        "warn" { "Some metrics are approaching KPI thresholds. Review the findings below." }
-        default { "All sensor performance metrics are within acceptable KPI thresholds." }
     }
 
     $execSummaryHtml = @"
 <h2>Executive Summary</h2>
-<div class="summary-box $summaryClass">
-<strong>Overall Assessment: $summaryIcon</strong><br/>
-$summaryText
+<div class="callout">
+<strong>Highlights from this test run ($($scenarioResults.Count) scenarios on $hostName):</strong>
 </div>
 "@
     if ($findings.Count -gt 0) {
-        $execSummaryHtml += "<h3>Key Findings</h3><ul>"
+        $execSummaryHtml += "<ul>"
         foreach ($f in $findings) { $execSummaryHtml += "<li class=`"finding`">$f</li>" }
         $execSummaryHtml += "</ul>"
     }
 
-    # ── Bottom Line & Conclusions ──
-    $kpiTable = @"
-<h2>Bottom Line</h2>
-<div class="callout"><strong>KPI Assessment:</strong> Comparing measured sensor performance against release-gate thresholds.</div>
-<table>
-<tr><th>Metric</th><th>Threshold</th><th>Measured (Worst)</th></tr>
-"@
+    # ── Bottom Line ──
     $worstIdleCpu = 0.0; $worstLoadCpu = 0.0; $worstMem = 0.0
     foreach ($sr in $scenarioResults) {
         if (-not $sr.total_sensor_avg_cpu_percent) { continue }
@@ -1576,13 +1559,22 @@ $summaryText
         if ($totalMem -gt $worstMem) { $worstMem = $totalMem }
     }
 
-    $idleCpuColor = if ($worstIdleCpu -lt 2) { "#27ae60" } elseif ($worstIdleCpu -lt 5) { "#f39c12" } else { "#e74c3c" }
-    $loadCpuColor = if ($worstLoadCpu -lt 15) { "#27ae60" } elseif ($worstLoadCpu -lt 25) { "#f39c12" } else { "#e74c3c" }
-    $memColor2 = if ($worstMem -lt 350) { "#27ae60" } elseif ($worstMem -lt 500) { "#f39c12" } else { "#e74c3c" }
+    $worstDiskWriteKbps = 0.0
+    foreach ($sr in $scenarioResults) {
+        if ($sr.disk_write_peak_kbps -and [double]$sr.disk_write_peak_kbps -gt $worstDiskWriteKbps) { $worstDiskWriteKbps = [double]$sr.disk_write_peak_kbps }
+    }
 
-    $kpiTable += "<tr><td>CPU (Idle)</td><td>&lt; 2% avg</td><td class=`"numeric`" style=`"color: $idleCpuColor; font-weight: bold;`">$([math]::Round($worstIdleCpu, 1))%</td></tr>"
-    $kpiTable += "<tr><td>CPU (Under Load)</td><td>&lt; 15% sustained</td><td class=`"numeric`" style=`"color: $loadCpuColor; font-weight: bold;`">$([math]::Round($worstLoadCpu, 1))%</td></tr>"
-    $kpiTable += "<tr><td>Memory (RSS Peak)</td><td>&lt; 500 MB</td><td class=`"numeric`" style=`"color: $memColor2; font-weight: bold;`">$([math]::Round($worstMem, 0)) MB</td></tr>"
+    $kpiTable = @"
+<h2>Bottom Line</h2>
+<table>
+<tr><th>Metric</th><th>Measured (Worst Case)</th></tr>
+"@
+    $kpiTable += "<tr><td>Sensor CPU (Idle Baseline)</td><td class=`"numeric`"><strong>$([math]::Round($worstIdleCpu, 1))%</strong></td></tr>"
+    $kpiTable += "<tr><td>Sensor CPU (Under Load)</td><td class=`"numeric`"><strong>$([math]::Round($worstLoadCpu, 1))%</strong></td></tr>"
+    $kpiTable += "<tr><td>Sensor Memory (RSS Peak)</td><td class=`"numeric`"><strong>$([math]::Round($worstMem, 0)) MB</strong></td></tr>"
+    if ($worstDiskWriteKbps -gt 0) {
+        $kpiTable += "<tr><td>Disk Write (Peak)</td><td class=`"numeric`"><strong>$([math]::Round($worstDiskWriteKbps / 1024, 1)) MB/s</strong></td></tr>"
+    }
     $kpiTable += "</table>"
 
     $conclusionsHtml = @"
@@ -1590,15 +1582,11 @@ $summaryText
 <div class="bottom-line">
 <p><strong>Test completed on $hostName ($NumCores cores).</strong></p>
 <ul>
-<li><strong>CPU Impact:</strong> Sensor averaged <strong>$([math]::Round($worstIdleCpu, 1))%</strong> at idle and peaked at <strong>$([math]::Round($worstLoadCpu, 1))%</strong> under load across $($scenarioResults.Count) scenarios.</li>
+<li><strong>CPU Impact:</strong> Sensor averaged <strong>$([math]::Round($worstIdleCpu, 1))%</strong> at idle and <strong>$([math]::Round($worstLoadCpu, 1))%</strong> under load across $($scenarioResults.Count) scenarios.</li>
 <li><strong>Memory Impact:</strong> Peak total sensor working set was <strong>$([math]::Round($worstMem, 0)) MB</strong>.</li>
 "@
-    $worstDiskWrite = 0.0
-    foreach ($sr in $scenarioResults) {
-        if ($sr.disk_write_peak_kbps -and [double]$sr.disk_write_peak_kbps -gt $worstDiskWrite) { $worstDiskWrite = [double]$sr.disk_write_peak_kbps }
-    }
-    if ($worstDiskWrite -gt 0) {
-        $conclusionsHtml += "<li><strong>Disk I/O:</strong> Peak disk write rate was <strong>$([math]::Round($worstDiskWrite / 1024, 1)) MB/s</strong>.</li>"
+    if ($worstDiskWriteKbps -gt 0) {
+        $conclusionsHtml += "<li><strong>Disk I/O:</strong> Peak disk write rate was <strong>$([math]::Round($worstDiskWriteKbps / 1024, 1)) MB/s</strong>.</li>"
     }
     $conclusionsHtml += @"
 </ul>
@@ -1610,7 +1598,7 @@ $summaryText
     $currentHtml = $sb.ToString()
     $cpuDefIdx = $currentHtml.IndexOf('<div class="callout">')
     if ($cpuDefIdx -gt 0) {
-        $sb.Clear()
+        [void]$sb.Clear()
         [void]$sb.Append($currentHtml.Substring(0, $cpuDefIdx))
         [void]$sb.AppendLine($execSummaryHtml)
         [void]$sb.Append($currentHtml.Substring($cpuDefIdx))
@@ -1902,7 +1890,7 @@ if ($ScenarioResultsDir) {
         throw "Scenario results directory not found: $ScenarioResultsDir"
     }
     Write-Host "Building self-service performance report from: $ScenarioResultsDir" -ForegroundColor Cyan
-    $report = Build-SelfServiceReport -ResultsDir $ScenarioResultsDir -NumCores $NumCores | Out-String
+    $report = Build-SelfServiceReport -ResultsDir $ScenarioResultsDir -NumCores $NumCores
     $report | Set-Content -Path $OutputPath -Encoding UTF8
     Write-Host "Performance report written to: $OutputPath" -ForegroundColor Green
 
@@ -1933,7 +1921,7 @@ if ($ScenarioResultsDir) {
             }
         }
         if ($etlData) {
-            $etlReport = Build-EtlReport -EtlData $etlData -UseSymbols:$UseSymbols | Out-String
+            $etlReport = Build-EtlReport -EtlData $etlData -UseSymbols:$UseSymbols
             $etlReport | Set-Content -Path $EtlOutputPath -Encoding UTF8
             Write-Host "ETL report written to: $EtlOutputPath" -ForegroundColor Green
         }
