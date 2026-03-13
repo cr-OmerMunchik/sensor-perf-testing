@@ -88,7 +88,7 @@ $scenariosDir = Join-Path $baseDir "test-scenarios"
 $toolsDir = Join-Path $baseDir "tools"
 $resultsDir = "C:\PerfTest\results"
 $tracesDir = "C:\PerfTest\traces"
-$timestamp = Get-Date -Format "yyyy-MM-dd"
+$timestamp = Get-Date -Format "yyyy-MM-dd-HHmmss"
 
 if ($NumCores -le 0) { $NumCores = [Environment]::ProcessorCount }
 if (-not $ReportsDir) { $ReportsDir = "C:\PerfTest\reports" }
