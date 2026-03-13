@@ -1186,20 +1186,23 @@ $($script:SharedCss)
 </head>
 <body>
 <h1>Cybereason Sensor Performance Report</h1>
-<p><strong>Generated:</strong> $genTime &nbsp;|&nbsp; <strong>Host:</strong> $hostName &nbsp;|&nbsp; <strong>Cores:</strong> $NumCores</p>
 "@)
 
-    # ── Test Info ──
+    # ── Compute test timing ──
     $firstStart = ($scenarioResults | Where-Object { $_.start_time } | Sort-Object { [datetime]$_.start_time } | Select-Object -First 1).start_time
     $lastEnd = ($scenarioResults | Where-Object { $_.end_time } | Sort-Object { [datetime]$_.end_time } -Descending | Select-Object -First 1).end_time
     $totalDurMin = if ($firstStart -and $lastEnd) { [math]::Round(([datetime]$lastEnd - [datetime]$firstStart).TotalMinutes, 1) } else { "?" }
+
+    $startFmt = if ($firstStart) { ([datetime]$firstStart).ToString('yyyy-MM-dd HH:mm:ss') } else { "?" }
+    $endFmt = if ($lastEnd) { ([datetime]$lastEnd).ToString('yyyy-MM-dd HH:mm:ss') } else { "?" }
+
+    [void]$sb.AppendLine("<p><strong>Host:</strong> $hostName &nbsp;|&nbsp; <strong>Cores:</strong> $NumCores &nbsp;|&nbsp; <strong>Start:</strong> $startFmt &nbsp;|&nbsp; <strong>End:</strong> $endFmt &nbsp;|&nbsp; <strong>Duration:</strong> $totalDurMin min</p>")
 
     [void]$sb.AppendLine("<h2>Test Information</h2>")
     [void]$sb.AppendLine("<table>")
     [void]$sb.AppendLine("<tr><th>Property</th><th>Value</th></tr>")
     [void]$sb.AppendLine("<tr><td>Host</td><td>$hostName ($NumCores cores)</td></tr>")
     [void]$sb.AppendLine("<tr><td>Scenarios run</td><td>$($scenarioResults.Count)</td></tr>")
-    [void]$sb.AppendLine("<tr><td>Test window</td><td>$firstStart &rarr; $lastEnd ($totalDurMin min)</td></tr>")
     [void]$sb.AppendLine("<tr><td>Data source</td><td>Inline process metrics (Windows Performance Counters, 5s sampling)</td></tr>")
     [void]$sb.AppendLine("</table>")
 
@@ -1613,7 +1616,7 @@ $($script:SharedCss)
 # ── Build the separate ETL report ──
 
 function Build-EtlReport {
-    param($EtlData, [switch]$UseSymbols)
+    param($EtlData, [switch]$UseSymbols, [string]$TestStart, [string]$TestEnd, [string]$TestDuration)
 
     $sb = [System.Text.StringBuilder]::new()
     $genTime = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
@@ -1630,9 +1633,15 @@ $($script:SharedCss)
 </head>
 <body>
 <h1>ETL Trace Analysis (CPU Hotspots)</h1>
-<p><strong>Generated:</strong> $genTime</p>
-<p>ETL profiling analysis for the heaviest scenarios. Shows which processes and functions consumed the most CPU during the trace.</p>
 "@)
+    $timeLine = "<p>"
+    if ($TestStart) { $timeLine += "<strong>Start:</strong> $TestStart" }
+    if ($TestEnd) { $timeLine += " &nbsp;|&nbsp; <strong>End:</strong> $TestEnd" }
+    if ($TestDuration) { $timeLine += " &nbsp;|&nbsp; <strong>Duration:</strong> $TestDuration min" }
+    $timeLine += "</p>"
+    [void]$sb.AppendLine($timeLine)
+    [void]$sb.AppendLine("<p>ETL profiling analysis for the heaviest scenarios. Shows which processes and functions consumed the most CPU during the trace.</p>")
+    [void]$sb.AppendLine("")
 
     if (-not $EtlData -or -not $EtlData.traces) {
         [void]$sb.AppendLine("<p>No ETL trace data available.</p>")
@@ -1894,6 +1903,21 @@ if ($ScenarioResultsDir) {
     $report | Set-Content -Path $OutputPath -Encoding UTF8
     Write-Host "Performance report written to: $OutputPath" -ForegroundColor Green
 
+    # Extract timing info from scenario JSONs for ETL report header
+    $ssJsonFiles = Get-ChildItem -Path $ScenarioResultsDir -Filter "*.json" -File
+    $ssTimingStart = $null; $ssTimingEnd = $null; $ssTimingDur = $null
+    if ($ssJsonFiles.Count -gt 0) {
+        $ssResults = @()
+        foreach ($f in $ssJsonFiles) {
+            try { $ssResults += (Get-Content $f.FullName -Raw | ConvertFrom-Json) } catch {}
+        }
+        $ssFirst = ($ssResults | Where-Object { $_.start_time } | Sort-Object { [datetime]$_.start_time } | Select-Object -First 1).start_time
+        $ssLast = ($ssResults | Where-Object { $_.end_time } | Sort-Object { [datetime]$_.end_time } -Descending | Select-Object -First 1).end_time
+        if ($ssFirst) { $ssTimingStart = ([datetime]$ssFirst).ToString('yyyy-MM-dd HH:mm:ss') }
+        if ($ssLast) { $ssTimingEnd = ([datetime]$ssLast).ToString('yyyy-MM-dd HH:mm:ss') }
+        if ($ssFirst -and $ssLast) { $ssTimingDur = [math]::Round(([datetime]$ssLast - [datetime]$ssFirst).TotalMinutes, 1).ToString() }
+    }
+
     if (-not $SkipEtl) {
         $etlData = $null
         if ($EtlJsonPath -and (Test-Path $EtlJsonPath)) {
@@ -1921,7 +1945,11 @@ if ($ScenarioResultsDir) {
             }
         }
         if ($etlData) {
-            $etlReport = Build-EtlReport -EtlData $etlData -UseSymbols:$UseSymbols
+            $etlBuildArgs = @{ EtlData = $etlData; UseSymbols = $UseSymbols }
+            if ($ssTimingStart) { $etlBuildArgs['TestStart'] = $ssTimingStart }
+            if ($ssTimingEnd) { $etlBuildArgs['TestEnd'] = $ssTimingEnd }
+            if ($ssTimingDur) { $etlBuildArgs['TestDuration'] = $ssTimingDur }
+            $etlReport = Build-EtlReport @etlBuildArgs
             $etlReport | Set-Content -Path $EtlOutputPath -Encoding UTF8
             Write-Host "ETL report written to: $EtlOutputPath" -ForegroundColor Green
         }

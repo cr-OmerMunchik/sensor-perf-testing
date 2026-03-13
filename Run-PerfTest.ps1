@@ -145,6 +145,12 @@ if (Test-Path $resultsDir) {
 New-Item -ItemType Directory -Path $resultsDir -Force | Out-Null
 if ($EnableProfiling) {
     New-Item -ItemType Directory -Path $tracesDir -Force | Out-Null
+    $oldTraces = Get-ChildItem $tracesDir -Filter "*.etl" -File -ErrorAction SilentlyContinue
+    if ($oldTraces.Count -gt 0) {
+        $oldTraceSize = [math]::Round(($oldTraces | Measure-Object Length -Sum).Sum / 1GB, 2)
+        $oldTraces | Remove-Item -Force
+        Write-Host "  Removed $($oldTraces.Count) old ETL traces ($oldTraceSize GB)" -ForegroundColor Gray
+    }
 }
 New-Item -ItemType Directory -Path $ReportsDir -Force | Out-Null
 
