@@ -1426,9 +1426,9 @@ $($script:SharedCss)
             [void]$sb.AppendLine(@"
 <div class="callout"><strong>What this shows:</strong> Process uptime (how long main sensor processes have been running) and correlation DB size at each scenario. Process restarts during a scenario indicate stability issues.</div>
 "@)
-            $mainProcs = @("minionhost", "CrsSvc", "ActiveConsole")
+            $mainProcs = @("minionhost", "ActiveConsole")
             [void]$sb.AppendLine("<table><tr><th>Scenario</th>")
-            foreach ($mp in $mainProcs) { [void]$sb.AppendLine("<th>$mp Uptime</th>") }
+            foreach ($mp in $mainProcs) { [void]$sb.AppendLine("<th>$mp Uptime</th><th>$mp Restarts</th>") }
             [void]$sb.AppendLine("<th>DB Size (MB)</th></tr>")
             foreach ($sr in $scenarioResults) {
                 $pm = $sr.process_metrics
@@ -1439,15 +1439,17 @@ $($script:SharedCss)
                     elseif ($pm -is [hashtable] -and $pm.ContainsKey($mp)) { $procData = $pm[$mp] }
                     if ($procData -and $procData.uptime_minutes -ge 0) {
                         $uMin = [math]::Round([double]$procData.uptime_minutes, 0)
-                        $restarts = if ($procData.restarts -gt 0) { " <span style=`"color:#e74c3c;`">($($procData.restarts) restart$(if($procData.restarts -gt 1){'s'}))</span>" } else { "" }
                         if ($uMin -ge 60) {
                             $hrs = [math]::Floor($uMin / 60); $mins = $uMin % 60
-                            [void]$sb.AppendLine("<td class=`"numeric`">${hrs}h ${mins}m$restarts</td>")
+                            [void]$sb.AppendLine("<td class=`"numeric`">${hrs}h ${mins}m</td>")
                         } else {
-                            [void]$sb.AppendLine("<td class=`"numeric`">${uMin}m$restarts</td>")
+                            [void]$sb.AppendLine("<td class=`"numeric`">${uMin}m</td>")
                         }
+                        $restartCount = if ($procData.restarts) { [int]$procData.restarts } else { 0 }
+                        $restartColor = if ($restartCount -gt 0) { "color:#e74c3c; font-weight:bold;" } else { "" }
+                        [void]$sb.AppendLine("<td class=`"numeric`" style=`"$restartColor`">$restartCount</td>")
                     } else {
-                        [void]$sb.AppendLine("<td class=`"numeric`">-</td>")
+                        [void]$sb.AppendLine("<td class=`"numeric`">-</td><td class=`"numeric`">-</td>")
                     }
                 }
                 $dbSize = if ($sr.sensor_db_size_mb) { "$([math]::Round([double]$sr.sensor_db_size_mb, 1))" } else { "-" }
@@ -1553,7 +1555,7 @@ $summaryText
 <h2>Bottom Line</h2>
 <div class="callout"><strong>KPI Assessment:</strong> Comparing measured sensor performance against release-gate thresholds.</div>
 <table>
-<tr><th>Metric</th><th>Threshold (Idle)</th><th>Threshold (Load)</th><th>Measured (Worst)</th><th>Status</th></tr>
+<tr><th>Metric</th><th>Threshold</th><th>Measured (Worst)</th></tr>
 "@
     $worstIdleCpu = 0.0; $worstLoadCpu = 0.0; $worstMem = 0.0
     foreach ($sr in $scenarioResults) {
@@ -1574,13 +1576,13 @@ $summaryText
         if ($totalMem -gt $worstMem) { $worstMem = $totalMem }
     }
 
-    $cpuIdleStatus = if ($worstIdleCpu -lt 2) { "<span style=`"color:#27ae60; font-weight:bold;`">PASS</span>" } elseif ($worstIdleCpu -lt 5) { "<span style=`"color:#f39c12; font-weight:bold;`">WARN</span>" } else { "<span style=`"color:#e74c3c; font-weight:bold;`">FAIL</span>" }
-    $cpuLoadStatus = if ($worstLoadCpu -lt 15) { "<span style=`"color:#27ae60; font-weight:bold;`">PASS</span>" } elseif ($worstLoadCpu -lt 25) { "<span style=`"color:#f39c12; font-weight:bold;`">WARN</span>" } else { "<span style=`"color:#e74c3c; font-weight:bold;`">FAIL</span>" }
-    $memStatus = if ($worstMem -lt 350) { "<span style=`"color:#27ae60; font-weight:bold;`">PASS</span>" } elseif ($worstMem -lt 500) { "<span style=`"color:#f39c12; font-weight:bold;`">WARN</span>" } else { "<span style=`"color:#e74c3c; font-weight:bold;`">FAIL</span>" }
+    $idleCpuColor = if ($worstIdleCpu -lt 2) { "#27ae60" } elseif ($worstIdleCpu -lt 5) { "#f39c12" } else { "#e74c3c" }
+    $loadCpuColor = if ($worstLoadCpu -lt 15) { "#27ae60" } elseif ($worstLoadCpu -lt 25) { "#f39c12" } else { "#e74c3c" }
+    $memColor2 = if ($worstMem -lt 350) { "#27ae60" } elseif ($worstMem -lt 500) { "#f39c12" } else { "#e74c3c" }
 
-    $kpiTable += "<tr><td>CPU (Idle)</td><td>&lt; 2% avg</td><td>N/A</td><td class=`"numeric`">$([math]::Round($worstIdleCpu, 1))%</td><td>$cpuIdleStatus</td></tr>"
-    $kpiTable += "<tr><td>CPU (Under Load)</td><td>N/A</td><td>&lt; 15% sustained</td><td class=`"numeric`">$([math]::Round($worstLoadCpu, 1))%</td><td>$cpuLoadStatus</td></tr>"
-    $kpiTable += "<tr><td>Memory (RSS Peak)</td><td>&lt; 350 MB</td><td>&lt; 500 MB</td><td class=`"numeric`">$([math]::Round($worstMem, 0)) MB</td><td>$memStatus</td></tr>"
+    $kpiTable += "<tr><td>CPU (Idle)</td><td>&lt; 2% avg</td><td class=`"numeric`" style=`"color: $idleCpuColor; font-weight: bold;`">$([math]::Round($worstIdleCpu, 1))%</td></tr>"
+    $kpiTable += "<tr><td>CPU (Under Load)</td><td>&lt; 15% sustained</td><td class=`"numeric`" style=`"color: $loadCpuColor; font-weight: bold;`">$([math]::Round($worstLoadCpu, 1))%</td></tr>"
+    $kpiTable += "<tr><td>Memory (RSS Peak)</td><td>&lt; 500 MB</td><td class=`"numeric`" style=`"color: $memColor2; font-weight: bold;`">$([math]::Round($worstMem, 0)) MB</td></tr>"
     $kpiTable += "</table>"
 
     $conclusionsHtml = @"

@@ -123,14 +123,19 @@ function Start-Scenario {
         # Discover sensor DB path once before starting the sampler
         $dbPath = $null
         $dbSearchPaths = @(
+            "C:\ProgramData\apv2\Database",
             "C:\ProgramData\Cybereason\ActiveProbe\data",
             "C:\ProgramData\Crs",
             "C:\ProgramData\Cybereason"
         )
+        $dbFilters = @("CrCorrelationDB.sqlite", "*.sqlite", "*.db")
         foreach ($sp in $dbSearchPaths) {
             if (Test-Path $sp) {
-                $found = Get-ChildItem $sp -Filter "*.db" -Recurse -ErrorAction SilentlyContinue | Sort-Object Length -Descending | Select-Object -First 1
-                if ($found) { $dbPath = $found.FullName; break }
+                foreach ($filter in $dbFilters) {
+                    $found = Get-ChildItem $sp -Filter $filter -Recurse -ErrorAction SilentlyContinue | Sort-Object Length -Descending | Select-Object -First 1
+                    if ($found) { $dbPath = $found.FullName; break }
+                }
+                if ($dbPath) { break }
             }
         }
 
