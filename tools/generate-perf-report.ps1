@@ -1746,9 +1746,34 @@ $($script:SharedCss)
             [void]$sb.AppendLine("</table>")
         }
 
+        # Symbol resolution summary
+        $totalResolved = 0; $totalUnresolved = 0
+        foreach ($t in $validTraces) {
+            if ($null -ne $t.symbolsResolved) { $totalResolved += [int]$t.symbolsResolved }
+            if ($null -ne $t.symbolsUnresolved) { $totalUnresolved += [int]$t.symbolsUnresolved }
+        }
+        $totalSymSamples = $totalResolved + $totalUnresolved
+        $resPct = if ($totalSymSamples -gt 0) { [math]::Round(100.0 * $totalResolved / $totalSymSamples, 1) } else { 0 }
+
+        if ($UseSymbols -and $totalSymSamples -gt 0 -and $resPct -lt 5) {
+            [void]$sb.AppendLine(@"
+<div class="callout" style="border-left: 4px solid #e74c3c; background: #fdf2f2;">
+<strong>Symbol Resolution Failed</strong> -- Only $resPct% of sensor CPU samples ($totalResolved / $totalSymSamples) could be resolved to function names.
+This almost certainly means the PDB files do not match the installed sensor binaries.
+<br/><br/>
+<strong>To fix:</strong> Obtain PDB files from the exact same build as the installed sensor.
+If you copied PDBs from multiple builds into a flat directory, files may have been renamed with _1/_2 suffixes by Windows, preventing the symbol engine from matching them.
+Copy PDBs preserving the build output directory structure instead.
+</div>
+"@)
+        }
+
         $hasAnyFunctions = @($validTraces | Where-Object { $_.topFunctions -and $_.topFunctions.Count -gt 0 }).Count -gt 0
         if (($UseSymbols -or $hasAnyFunctions) -and $validTraces.Count -gt 0) {
             [void]$sb.AppendLine("<h2>Function-Level Hotspots</h2>")
+            if ($totalSymSamples -gt 0) {
+                [void]$sb.AppendLine("<p>Symbol resolution: <strong>$totalResolved</strong> / $totalSymSamples sensor samples resolved (<strong>${resPct}%</strong>), $totalUnresolved unresolved.</p>")
+            }
             $sensorModules = @("minionhost", "ActiveConsole", "PylumLoader", "CrsSvc", "AmSvc", "WscIfSvc", "ExecutionPreventionSvc", "CrAmTray", "CrDrvCtrl", "Nnx")
 
             $globalFunctions = @{}
@@ -1805,7 +1830,7 @@ $($script:SharedCss)
                 $hasUnresolved = @($globalFunctions.Values | Where-Object { $_.function -match '^0x' }).Count -gt 0
                 $hasResolved = @($globalFunctions.Values | Where-Object { $_.function -notmatch '^0x' }).Count -gt 0
                 if ($hasUnresolved -and -not $hasResolved) {
-                    [void]$sb.AppendLine('<div class="callout" style="border-left: 4px solid #f39c12;"><strong>Symbol Note:</strong> Function names could not be resolved because the PDB symbol files do not exactly match the installed sensor binaries (GUID mismatch). The addresses shown are memory offsets within each module. To resolve function names, obtain PDB files from the exact same build as the installed sensor.</div>')
+                    [void]$sb.AppendLine('<div class="callout" style="border-left: 4px solid #e74c3c; background: #fdf2f2;"><strong>Symbol Resolution Failed:</strong> No function names could be resolved. The PDB symbol files do not match the installed sensor binaries (GUID mismatch). The hex addresses shown are memory offsets within each module.<br/><br/><strong>Common causes:</strong><ul><li>PDB files are from a different build than the installed sensor</li><li>PDB files were renamed (e.g. with _1/_2 suffixes) when copied into a flat directory</li><li>PDB files are missing for the sensor modules</li></ul><strong>Fix:</strong> Obtain PDBs from the exact same build and preserve the original directory structure, or copy only sensor PDBs into a clean directory.</div>')
                 } else {
                     [void]$sb.AppendLine("<div class=`"callout`"><strong>What this shows:</strong> Top CPU-consuming functions within Cybereason sensor modules, resolved from PDB symbol files. Each function''s weight is the sum of its CPU samples across all scenarios. OS and third-party functions are excluded.</div>")
                 }
@@ -1945,6 +1970,26 @@ if ($ScenarioResultsDir) {
             }
         }
         if ($etlData) {
+            # Check symbol resolution quality and warn if poor
+            if ($UseSymbols -and $etlData.traces) {
+                $trResolved = 0; $trUnresolved = 0
+                foreach ($t in $etlData.traces) {
+                    if ($null -ne $t.symbolsResolved) { $trResolved += [int]$t.symbolsResolved }
+                    if ($null -ne $t.symbolsUnresolved) { $trUnresolved += [int]$t.symbolsUnresolved }
+                }
+                $trTotal = $trResolved + $trUnresolved
+                if ($trTotal -gt 0) {
+                    $trPct = [math]::Round(100.0 * $trResolved / $trTotal, 1)
+                    Write-Host "  Symbol resolution: $trResolved / $trTotal sensor samples resolved (${trPct}%)" -ForegroundColor $(if ($trPct -ge 50) { 'Gray' } else { 'Yellow' })
+                    if ($trPct -lt 5) {
+                        Write-Host "  [WARN] Very low symbol resolution. PDB files likely do not match the installed sensor." -ForegroundColor Yellow
+                        Write-Host "         Ensure PDBs are from the exact same build. If you copied PDBs into a flat" -ForegroundColor Yellow
+                        Write-Host "         directory, they may have been renamed with _1/_2 suffixes -- use the original" -ForegroundColor Yellow
+                        Write-Host "         directory structure or copy only the sensor PDBs with their original names." -ForegroundColor Yellow
+                    }
+                }
+            }
+
             $etlBuildArgs = @{ EtlData = $etlData; UseSymbols = $UseSymbols }
             if ($ssTimingStart) { $etlBuildArgs['TestStart'] = $ssTimingStart }
             if ($ssTimingEnd) { $etlBuildArgs['TestEnd'] = $ssTimingEnd }

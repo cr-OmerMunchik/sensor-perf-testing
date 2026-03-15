@@ -176,6 +176,9 @@ static class EtlAnalyzer
         var functionWeights = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
         double totalWeight = 0;
         int sampleCount = 0;
+        int sensorSampleCount = 0;
+        int resolvedFuncCount = 0;
+        int unresolvedFuncCount = 0;
 
         var settings = new TraceProcessorSettings { AllowLostEvents = true };
 
@@ -192,6 +195,10 @@ static class EtlAnalyzer
                 var symbolData = pendingSymbols.Result;
                 if (!string.IsNullOrEmpty(symbolPath))
                     Environment.SetEnvironmentVariable("_NT_SYMBOL_PATH", symbolPath, EnvironmentVariableTarget.Process);
+
+                var ntSymPath = Environment.GetEnvironmentVariable("_NT_SYMBOL_PATH") ?? "(not set)";
+                Console.Error.WriteLine($"  _NT_SYMBOL_PATH: {ntSymPath}");
+
                 symbolData.LoadSymbolsForConsoleAsync(SymCachePath.Automatic, SymbolPath.Automatic).GetAwaiter().GetResult();
             }
 
@@ -213,14 +220,28 @@ static class EtlAnalyzer
 
                 if (sensorProcessNames.Contains(processBase))
                 {
+                    sensorSampleCount++;
                     var funcKey = GetSensorFunctionKey(sample, sensorProcessNames);
                     if (funcKey != null)
                     {
+                        bool isHexOnly = funcKey.Contains("!0x") || funcKey.Contains("!0X");
+                        if (isHexOnly) unresolvedFuncCount++;
+                        else resolvedFuncCount++;
+
                         functionWeights.TryGetValue(funcKey, out var fWeight);
                         functionWeights[funcKey] = fWeight + weight;
                     }
                 }
             }
+        }
+
+        if (useSymbols && sensorSampleCount > 0)
+        {
+            int total = resolvedFuncCount + unresolvedFuncCount;
+            double resolvedPct = total > 0 ? 100.0 * resolvedFuncCount / total : 0;
+            Console.Error.WriteLine($"  Symbol resolution: {resolvedFuncCount}/{total} sensor samples resolved ({resolvedPct:F1}%), {unresolvedFuncCount} unresolved");
+            if (resolvedPct < 5 && total > 100)
+                Console.Error.WriteLine($"  WARNING: Very low symbol resolution rate ({resolvedPct:F1}%). PDB files likely do not match the installed sensor binaries. Ensure the PDBs are from the exact same build.");
         }
 
         var processQuery = processWeights
@@ -246,12 +267,16 @@ static class EtlAnalyzer
             })
             .ToList();
 
+        int totalFuncSamples = resolvedFuncCount + unresolvedFuncCount;
         return new
         {
             traceFile = Path.GetFileName(tracePath),
             scenario = scenarioName,
             sampleCount,
             totalWeightMs = Math.Round(totalWeight, 1),
+            symbolsResolved = resolvedFuncCount,
+            symbolsUnresolved = unresolvedFuncCount,
+            symbolResolutionPct = totalFuncSamples > 0 ? Math.Round(100.0 * resolvedFuncCount / totalFuncSamples, 1) : 0,
             topProcesses,
             topFunctions
         };

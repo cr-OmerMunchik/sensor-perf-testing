@@ -93,6 +93,38 @@ $timestamp = Get-Date -Format "yyyy-MM-dd-HHmmss"
 if ($NumCores -le 0) { $NumCores = [Environment]::ProcessorCount }
 if (-not $ReportsDir) { $ReportsDir = "C:\PerfTest\reports" }
 
+# ── Logging setup ──
+
+$logsDir = "C:\PerfTest\logs"
+New-Item -ItemType Directory -Path $logsDir -Force | Out-Null
+$logFile = Join-Path $logsDir "perf-test-${timestamp}.log"
+
+function Write-Log {
+    param([string]$Message, [string]$Level = "INFO")
+    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
+    $line = "[$ts] [$Level] $Message"
+    Add-Content -Path $logFile -Value $line -Encoding UTF8
+    switch ($Level) {
+        "WARN"  { Write-Host "[WARN] $Message" -ForegroundColor Yellow }
+        "ERROR" { Write-Host "[ERROR] $Message" -ForegroundColor Red }
+        default {}
+    }
+}
+
+Write-Log "=== Sensor Performance Test started ==="
+Write-Log "Host: $env:COMPUTERNAME | OS: $([Environment]::OSVersion.VersionString)"
+Write-Log "PowerShell: $($PSVersionTable.PSVersion) | User: $env:USERNAME"
+Write-Log "Script: $PSCommandPath"
+Write-Log "Parameters: HeavyMode=$HeavyMode EnableProfiling=$EnableProfiling NumCores=$NumCores"
+Write-Log "Parameters: OnlyScenarios=[$($OnlyScenarios -join ',')] SkipScenarios=[$($SkipScenarios -join ',')]"
+Write-Log "Parameters: SymbolsDir=$SymbolsDir ReportsDir=$ReportsDir ReportTag=$ReportTag"
+
+$script:SensorProcessNames = @(
+    "minionhost", "ActiveConsole", "CrsSvc", "PylumLoader", "AmSvc", "WscIfSvc",
+    "ExecutionPreventionSvc", "ActiveCLIAgent", "CrAmTray", "Nnx", "CrEX3",
+    "CybereasonAV", "CrDrvCtrl", "CrScanTool"
+)
+
 # ── Preflight checks ──
 
 if (-not (Test-Path $scenariosDir)) {
@@ -105,9 +137,14 @@ if (-not (Test-Path (Join-Path $scenariosDir "Run-AllScenarios.ps1"))) {
 if ($EnableProfiling) {
     $wpr = Get-Command wpr.exe -ErrorAction SilentlyContinue
     if (-not $wpr) {
-        Write-Host "[WARN] wpr.exe not found. Install Windows Performance Toolkit for profiling." -ForegroundColor Yellow
-        Write-Host "       Continuing without profiling." -ForegroundColor Yellow
+        Write-Log "wpr.exe not found. Install Windows Performance Toolkit for profiling. Continuing without profiling." -Level WARN
         $EnableProfiling = $false
+    }
+    $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
+    if (-not $dotnet) {
+        Write-Log ".NET SDK not found. ETL analysis requires .NET 8+. Install from https://dotnet.microsoft.com/download" -Level WARN
+    } else {
+        Write-Log ".NET SDK found: $(& dotnet --version 2>$null)"
     }
 }
 
@@ -126,12 +163,14 @@ Write-Host "  Reports dir   : $ReportsDir" -ForegroundColor White
 if ($SymbolsDir) {
     Write-Host "  Symbols dir   : $SymbolsDir" -ForegroundColor White
 }
+Write-Host "  Log file      : $logFile" -ForegroundColor White
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host ""
 
 # ── Phase 1: Clear previous results ──
 
 Write-Host "[Phase 1] Preparing environment..." -ForegroundColor Cyan
+Write-Log "Phase 1: Preparing environment"
 
 if (Test-Path $resultsDir) {
     $oldResults = Get-ChildItem $resultsDir -Filter "*.json" -ErrorAction SilentlyContinue
@@ -140,6 +179,7 @@ if (Test-Path $resultsDir) {
         New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
         $oldResults | Move-Item -Destination $backupDir
         Write-Host "  Backed up $($oldResults.Count) previous result files to $backupDir" -ForegroundColor Gray
+        Write-Log "Backed up $($oldResults.Count) previous result files to $backupDir"
     }
 }
 New-Item -ItemType Directory -Path $resultsDir -Force | Out-Null
@@ -150,14 +190,29 @@ if ($EnableProfiling) {
         $oldTraceSize = [math]::Round(($oldTraces | Measure-Object Length -Sum).Sum / 1GB, 2)
         $oldTraces | Remove-Item -Force
         Write-Host "  Removed $($oldTraces.Count) old ETL traces ($oldTraceSize GB)" -ForegroundColor Gray
+        Write-Log "Removed $($oldTraces.Count) old ETL traces ($oldTraceSize GB)"
     }
 }
 New-Item -ItemType Directory -Path $ReportsDir -Force | Out-Null
+
+$freeSpace = [math]::Round((Get-PSDrive C).Free / 1GB, 1)
+Write-Log "Disk space free (C:): ${freeSpace} GB"
+if ($freeSpace -lt 2) {
+    Write-Log "Low disk space (${freeSpace} GB free). ETL profiling requires 5-10 GB." -Level WARN
+}
+
+$sensorProcs = Get-Process -Name "minionhost","ActiveConsole" -ErrorAction SilentlyContinue
+if ($sensorProcs) {
+    Write-Log "Sensor processes running: $($sensorProcs | ForEach-Object { "$($_.Name) (PID $($_.Id))" } | Out-String -Stream | Where-Object { $_ })"
+} else {
+    Write-Log "No sensor processes detected (minionhost, ActiveConsole). Metrics will be empty." -Level WARN
+}
 
 # ── Phase 2: Run scenarios ──
 
 Write-Host ""
 Write-Host "[Phase 2] Running test scenarios..." -ForegroundColor Cyan
+Write-Log "Phase 2: Running test scenarios"
 
 $runArgs = @{
     CollectMetrics = $true
@@ -169,16 +224,20 @@ if ($SkipScenarios.Count -gt 0)  { $runArgs["SkipScenarios"] = $SkipScenarios }
 if ($PauseBetweenSeconds -ge 0)  { $runArgs["PauseBetweenSeconds"] = $PauseBetweenSeconds }
 
 $suiteStart = Get-Date
+Write-Log "Scenario execution started at $($suiteStart.ToString('o'))"
 & (Join-Path $scenariosDir "Run-AllScenarios.ps1") @runArgs
 $suiteEnd = Get-Date
 $suiteDurationMin = [math]::Round(($suiteEnd - $suiteStart).TotalMinutes, 1)
 
 Write-Host ""
 Write-Host "  Scenarios completed in $suiteDurationMin minutes." -ForegroundColor Green
+Write-Log "Scenarios completed in $suiteDurationMin minutes"
 
 if ($SkipReports) {
     Write-Host ""
     Write-Host "[DONE] Reports skipped. Results saved in $resultsDir" -ForegroundColor Yellow
+    Write-Log "Reports skipped by user request. Results in $resultsDir"
+    Write-Log "Log file: $logFile"
     exit 0
 }
 
@@ -186,16 +245,19 @@ if ($SkipReports) {
 
 Write-Host ""
 Write-Host "[Phase 3] Generating reports..." -ForegroundColor Cyan
+Write-Log "Phase 3: Generating reports"
 
 Start-Sleep -Seconds 3
 [GC]::Collect()
 
 $resultFiles = Get-ChildItem $resultsDir -Filter "*.json" -File | Sort-Object Name
 if ($resultFiles.Count -eq 0) {
-    Write-Host "[WARN] No scenario result JSON files found in $resultsDir. Skipping reports." -ForegroundColor Yellow
+    Write-Log "No scenario result JSON files found in $resultsDir. Skipping reports." -Level WARN
+    Write-Log "Log file: $logFile"
     exit 0
 }
 Write-Host "  Found $($resultFiles.Count) scenario result files." -ForegroundColor Gray
+Write-Log "Found $($resultFiles.Count) scenario result files: $($resultFiles.Name -join ', ')"
 
 $tagSuffix = if ($ReportTag) { "-$ReportTag" } else { "" }
 
@@ -213,25 +275,73 @@ if (-not $HeavyMode)     { $perfArgs["LightMode"] = $true }
 if ($GenerateConfluence) { $perfArgs["GenerateConfluence"] = $true }
 
 Write-Host "  Generating performance report..." -ForegroundColor Gray
+Write-Log "Generating performance report -> $perfReportPath"
 & (Join-Path $toolsDir "generate-perf-report.ps1") @perfArgs
 Write-Host "  Performance report: $perfReportPath" -ForegroundColor Green
+Write-Log "Performance report written: $perfReportPath"
 
 # --- ETL analysis report (if profiling was enabled) ---
 if ($EnableProfiling) {
     $etlFiles = Get-ChildItem $tracesDir -Filter "*.etl" -File -ErrorAction SilentlyContinue
     if ($etlFiles.Count -gt 0) {
         Write-Host "  Found $($etlFiles.Count) ETL traces. Running analysis..." -ForegroundColor Gray
+        Write-Log "Found $($etlFiles.Count) ETL traces: $($etlFiles.Name -join ', ')"
 
         $etlReportPath = Join-Path $ReportsDir "etl-cpu-hotspots-report-${timestamp}${tagSuffix}.html"
 
         if ($SymbolsDir -and (Test-Path $SymbolsDir)) {
-            $pdbPaths = Get-ChildItem $SymbolsDir -Recurse -Filter "*.pdb" -File |
-                ForEach-Object { $_.DirectoryName } | Sort-Object -Unique
-            if ($pdbPaths.Count -gt 0) {
-                $symbolPath = ($pdbPaths -join ";") + ";SRV*C:\symbols*https://msdl.microsoft.com/download/symbols"
-                $env:_NT_SYMBOL_PATH = $symbolPath
-                Write-Host "  Symbol path set ($($pdbPaths.Count) PDB directories)." -ForegroundColor Gray
+            Write-Log "Scanning SymbolsDir for PDBs: $SymbolsDir"
+
+            $allPdbs = Get-ChildItem $SymbolsDir -Recurse -Filter "*.pdb" -File
+            Write-Log "Total PDB files found: $($allPdbs.Count)"
+
+            # Validate: warn about renamed PDBs with _1, _2 suffixes (common when
+            # files from different builds are dumped into a flat directory)
+            $renamedPdbs = @($allPdbs | Where-Object { $_.BaseName -match '_\d+$' })
+            if ($renamedPdbs.Count -gt 0) {
+                $renamedSamples = ($renamedPdbs | Select-Object -First 5 | ForEach-Object { $_.Name }) -join ", "
+                Write-Log "Found $($renamedPdbs.Count) PDB files with _1/_2/_3 suffixes (e.g. $renamedSamples). These are likely renamed duplicates and will NOT match sensor binaries. If you copied PDBs from multiple builds into a flat directory, the symbol engine cannot resolve them." -Level WARN
+                Write-Host "       Tip: Copy PDBs preserving the build output directory structure," -ForegroundColor Yellow
+                Write-Host "       or keep only the PDBs from the exact build matching your installed sensor." -ForegroundColor Yellow
             }
+
+            # Filter to directories containing sensor-relevant PDBs only.
+            # _NT_SYMBOL_PATH is not recursive -- each directory must be listed explicitly.
+            # A full build output may have 900+ PDBs across hundreds of directories,
+            # exceeding the env var length limit. We only need the ~14 sensor modules.
+            $sensorPdbDirs = @($allPdbs | Where-Object {
+                $baseName = $_.BaseName
+                $script:SensorProcessNames | Where-Object { $baseName -ieq $_ }
+            } | ForEach-Object { $_.DirectoryName } | Sort-Object -Unique)
+
+            $allPdbDirs = @($allPdbs | ForEach-Object { $_.DirectoryName } | Sort-Object -Unique)
+            Write-Log "PDB directories total: $($allPdbDirs.Count), sensor-relevant: $($sensorPdbDirs.Count)"
+
+            if ($sensorPdbDirs.Count -gt 0) {
+                $symbolPath = ($sensorPdbDirs -join ";") + ";SRV*C:\symbols*https://msdl.microsoft.com/download/symbols"
+                $env:_NT_SYMBOL_PATH = $symbolPath
+                Write-Host "  Symbol path set ($($sensorPdbDirs.Count) sensor PDB directories from $($allPdbDirs.Count) total)." -ForegroundColor Gray
+                Write-Log "Symbol path set with $($sensorPdbDirs.Count) sensor PDB directories"
+                foreach ($d in $sensorPdbDirs) { Write-Log "  PDB dir: $d" }
+
+                # Check which sensor PDBs were found and which are missing
+                $foundSensorPdbs = @($allPdbs | Where-Object {
+                    $baseName = $_.BaseName
+                    $script:SensorProcessNames | Where-Object { $baseName -ieq $_ }
+                } | ForEach-Object { $_.BaseName.ToLower() } | Sort-Object -Unique)
+                $missingSensorPdbs = @($script:SensorProcessNames | Where-Object { $_.ToLower() -notin $foundSensorPdbs })
+
+                Write-Log "Sensor PDBs found: $($foundSensorPdbs -join ', ')"
+                if ($missingSensorPdbs.Count -gt 0) {
+                    Write-Log "Sensor PDBs missing (functions in these modules will show as hex addresses): $($missingSensorPdbs -join ', ')" -Level WARN
+                }
+            } else {
+                Write-Log "No sensor-relevant PDBs found in $SymbolsDir. Looked for: $($script:SensorProcessNames -join ', '). Functions will appear as hex addresses." -Level WARN
+                Write-Host "       The SymbolsDir does not contain PDBs matching sensor process names." -ForegroundColor Yellow
+                Write-Host "       Expected PDB names: $($script:SensorProcessNames -join '.pdb, ').pdb" -ForegroundColor Yellow
+            }
+        } elseif ($SymbolsDir) {
+            Write-Log "SymbolsDir not found: $SymbolsDir" -Level WARN
         }
 
         $useSymbols = [bool]$SymbolsDir
@@ -248,13 +358,15 @@ if ($EnableProfiling) {
         if ($useSymbols)         { $etlArgs["UseSymbols"] = $true }
         if ($GenerateConfluence) { $etlArgs["GenerateConfluence"] = $true }
 
+        Write-Log "Running ETL analysis -> $etlReportPath"
         & (Join-Path $toolsDir "generate-perf-report.ps1") @etlArgs
         Remove-Item $etlArgs.OutputPath -ErrorAction SilentlyContinue
         Remove-Item ([System.IO.Path]::ChangeExtension($etlArgs.OutputPath, "confluence.html")) -ErrorAction SilentlyContinue
 
         Write-Host "  ETL report: $etlReportPath" -ForegroundColor Green
+        Write-Log "ETL report written: $etlReportPath"
     } else {
-        Write-Host "  [WARN] No .etl files found in $tracesDir" -ForegroundColor Yellow
+        Write-Log "No .etl files found in $tracesDir" -Level WARN
     }
 }
 
@@ -277,4 +389,10 @@ if ($EnableProfiling) {
     $traceSize = [math]::Round(($etlFiles | Measure-Object Length -Sum).Sum / 1GB, 2)
     Write-Host "  Traces         : $tracesDir ($($etlFiles.Count) files, ${traceSize} GB)" -ForegroundColor White
 }
+Write-Host "  Log            : $logFile" -ForegroundColor White
 Write-Host "================================================================" -ForegroundColor Green
+
+Write-Log "=== Run complete ==="
+Write-Log "Duration: $suiteDurationMin minutes"
+Write-Log "Reports: $(($reports | ForEach-Object { $_.Name }) -join ', ')"
+Write-Log "Log file: $logFile"
