@@ -37,20 +37,17 @@ for ($i = 1; $i -le $Cycles; $i++) {
     Write-Host "  Cycle $i of $Cycles ($userName)..." -ForegroundColor Gray -NoNewline
 
     try {
-        # Cleanup from previous failed run (ignore if user doesn't exist)
-        cmd /c "net user $userName /delete" 2>$null | Out-Null
+        Remove-LocalUser -Name $userName -ErrorAction SilentlyContinue
 
-        # Create user
-        cmd /c "net user $userName `"P@ssw0rd_Create_$i!`" /add" 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "Failed to create user $userName (exit code $LASTEXITCODE)" }
+        $secPwd = ConvertTo-SecureString "P@ssw0rd_Create_${i}!" -AsPlainText -Force
+        New-LocalUser -Name $userName -Password $secPwd -FullName "PerfTest User $i" `
+            -Description "Perf test temporary account" -AccountNeverExpires `
+            -PasswordNeverExpires -ErrorAction Stop | Out-Null
 
-        # Modify password
-        cmd /c "net user $userName `"P@ssw0rd_Modified_$i!`" " 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "Failed to modify user $userName (exit code $LASTEXITCODE)" }
+        $newPwd = ConvertTo-SecureString "P@ssw0rd_Modified_${i}!" -AsPlainText -Force
+        Set-LocalUser -Name $userName -Password $newPwd -ErrorAction Stop
 
-        # Delete user
-        cmd /c "net user $userName /delete" 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "Failed to delete user $userName (exit code $LASTEXITCODE)" }
+        Remove-LocalUser -Name $userName -ErrorAction Stop
 
         $successCount++
         Write-Host " OK" -ForegroundColor Green
@@ -58,7 +55,7 @@ for ($i = 1; $i -le $Cycles; $i++) {
     catch {
         $errorCount++
         Write-Host " ERROR: $_" -ForegroundColor Red
-        cmd /c "net user $userName /delete" 2>$null | Out-Null
+        Remove-LocalUser -Name $userName -ErrorAction SilentlyContinue
     }
 
     Start-Sleep -Milliseconds 500

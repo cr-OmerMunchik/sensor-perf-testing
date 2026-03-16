@@ -129,10 +129,19 @@ if ($browserProc) {
     Start-Sleep -Seconds 2
 }
 
-# Collect background job results
-$fileOps = Receive-Job $fileJob -Wait -ErrorAction SilentlyContinue
-$regOps = Receive-Job $regJob -Wait -ErrorAction SilentlyContinue
-$netReqs = Receive-Job $netJob -Wait -ErrorAction SilentlyContinue
+# Collect background job results (timeout after 60s to avoid indefinite hang)
+$jobTimeout = 60
+foreach ($j in @($fileJob, $regJob, $netJob)) {
+    $j | Wait-Job -Timeout $jobTimeout -ErrorAction SilentlyContinue | Out-Null
+    if ($j.State -eq 'Running') {
+        Write-Host "  [WARN] Job $($j.Name) still running after ${jobTimeout}s timeout, stopping." -ForegroundColor Yellow
+        $j | Stop-Job -ErrorAction SilentlyContinue
+    }
+}
+
+$fileOps = Receive-Job $fileJob -ErrorAction SilentlyContinue
+$regOps = Receive-Job $regJob -ErrorAction SilentlyContinue
+$netReqs = Receive-Job $netJob -ErrorAction SilentlyContinue
 
 Remove-Job $fileJob, $regJob, $netJob -Force -ErrorAction SilentlyContinue
 
