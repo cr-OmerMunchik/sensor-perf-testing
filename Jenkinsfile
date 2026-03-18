@@ -12,6 +12,7 @@ env.VAULT_TOKEN = env.DEV_VAULT_TOKEN
 
 IRELEASE_BASE = 'https://jenkins-irelease.eng.cybereason.net:443'
 IRELEASE_JOB = 'msi-sensor-x64-release-build-integration'
+IRELEASE_PERSONALIZER_JOB = 'personalization-build-integration'
 
 PHOENIX_DISCOVERY_URL = 'https://sensor-discovery-service-dev-us-ashburn-1.cybereason.net'
 PHOENIX_ORG_ID = '1002'
@@ -123,10 +124,74 @@ for a in arts:
                         }
                     }
 
-                    sensorExeName = sh(returnStdout: true, script:
+                    String rawExeName = sh(returnStdout: true, script:
                         "ls sensor-artifacts/CybereasonSensor64*.exe | head -1 | xargs basename"
                     ).trim()
-                    echo "Sensor EXE: ${sensorExeName}"
+                    echo "Raw sensor EXE: ${rawExeName}"
+
+                    withCredentials([
+                        usernamePassword(credentialsId: 'rejenkins-gcp',
+                                         usernameVariable: 'IRELEASE_USER',
+                                         passwordVariable: 'IRELEASE_TOKEN')
+                    ]) {
+                        sh """
+                            echo "=== Downloading personalizer ==="
+                            PERS_API="${IRELEASE_BASE}/job/${IRELEASE_PERSONALIZER_JOB}/lastSuccessfulBuild/api/json"
+                            PERS_JSON=\$(curl -sf -u "\${IRELEASE_USER}:\${IRELEASE_TOKEN}" "\$PERS_API")
+                            PERS_PATH=\$(echo "\$PERS_JSON" | python3 -c "
+import sys, json
+arts = json.load(sys.stdin)['artifacts']
+for a in arts:
+    if a['fileName'].startswith('personalizer') and a['fileName'].endswith('.gz'):
+        print(a['relativePath']); break
+")
+                            PERS_URL="${IRELEASE_BASE}/job/${IRELEASE_PERSONALIZER_JOB}/lastSuccessfulBuild/artifact/\${PERS_PATH}"
+                            echo "Downloading: \$PERS_URL"
+                            curl -sf -u "\${IRELEASE_USER}:\${IRELEASE_TOKEN}" "\$PERS_URL" -o personalizer.tar.gz
+                            ls -lh personalizer.tar.gz
+
+                            echo "=== Extracting personalizer ==="
+                            mkdir -p personalizer
+                            tar -xzf personalizer.tar.gz -C personalizer
+                            ls personalizer/
+                        """
+                    }
+
+                    echo "=== Personalizing sensor EXE ==="
+                    sh """
+                        pip install protobuf --quiet 2>/dev/null
+
+                        cat > personalizer/perf_personalization.json << 'PJSON'
+{
+    "msi_files": ["../sensor-artifacts/${rawExeName}"],
+    "output_folder": "../sensor-artifacts/personalized/",
+    "signon_server": "loving-jepsen-r.eng.cybereason.net",
+    "signon_port": "443",
+    "server": "loving-jepsen-1-t.eng.cybereason.net",
+    "port": "443",
+    "organization": "cybereason",
+    "organizationId": 1002,
+    "state": "ACTIVE_NORMAL",
+    "discoveryServerUrl": "${PHOENIX_DISCOVERY_URL}"
+}
+PJSON
+                        mkdir -p sensor-artifacts/personalized
+                        cd personalizer
+                        PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python3 personalizePackage.py -b perf_personalization.json
+                        cd ..
+                        ls -lh sensor-artifacts/personalized/
+                    """
+
+                    sensorExeName = sh(returnStdout: true, script:
+                        "ls sensor-artifacts/personalized/CybereasonSensor64*.exe 2>/dev/null | head -1 | xargs basename || echo ''"
+                    ).trim()
+
+                    if (!sensorExeName) {
+                        error("Personalization failed -- no personalized EXE found in sensor-artifacts/personalized/")
+                    }
+
+                    sh "cp sensor-artifacts/personalized/${sensorExeName} sensor-artifacts/${sensorExeName}"
+                    echo "Personalized sensor EXE: ${sensorExeName}"
                     currentBuild.displayName = "#${currentBuild.number}:${sensorExeName.replaceAll('CybereasonSensor64_', '').replaceAll('.exe', '')}"
                 }
             }
