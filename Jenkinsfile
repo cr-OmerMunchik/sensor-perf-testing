@@ -237,14 +237,14 @@ print('Bootstrap complete.')
                             sshpass -p '${VM_PASS}' scp ${SSH_OPTS} sensor-artifacts/output-x64.zip \
                                 ${VM_USER}@${vmIp}:C:/sensor/output-x64.zip
                             sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} ${VM_USER}@${vmIp} \
-                                "New-Item -ItemType Directory -Path C:\\sensor\\pdbs -Force | Out-Null; Expand-Archive -Path C:\\sensor\\output-x64.zip -DestinationPath C:\\sensor\\pdbs -Force"
+                                "powershell -Command \\"New-Item -ItemType Directory -Path C:\\\\sensor\\\\pdbs -Force | Out-Null; Expand-Archive -Path C:\\\\sensor\\\\output-x64.zip -DestinationPath C:\\\\sensor\\\\pdbs -Force\\""
                         """
                     }
 
-                    echo "Copying perf test framework to VM..."
+                    echo "Creating target directories and copying perf test framework to VM..."
                     sh """
                         sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} ${VM_USER}@${vmIp} \
-                            "New-Item -ItemType Directory -Path C:\\sensor\\sensor-perf-testing -Force | Out-Null; New-Item -ItemType Directory -Path C:\\Temp -Force | Out-Null; New-Item -ItemType Directory -Path C:\\PerfTest\\reports -Force | Out-Null; New-Item -ItemType Directory -Path C:\\PerfTest\\logs -Force | Out-Null"
+                            "powershell -Command \\"New-Item -ItemType Directory -Path C:\\\\sensor\\\\sensor-perf-testing, C:\\\\Temp, C:\\\\PerfTest\\\\reports, C:\\\\PerfTest\\\\logs -Force | Out-Null\\""
                         sshpass -p '${VM_PASS}' scp ${SSH_OPTS} -r \$(pwd)/ ${VM_USER}@${vmIp}:C:/sensor/sensor-perf-testing/
                     """
 
