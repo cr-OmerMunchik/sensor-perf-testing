@@ -147,16 +147,13 @@ if ($Uninstall) {
     exit 0
 }
 
-if (-not $PhoenixAuthKey) {
-    Write-Host "[ERROR] -PhoenixAuthKey is required for installation" -ForegroundColor Red
-    exit 1
-}
-
-Write-Host "=== Installing Sensor with Phoenix Parameters ===" -ForegroundColor Yellow
+Write-Host "=== Installing Sensor (personalized EXE) ===" -ForegroundColor Yellow
 Write-Host "  Sensor EXE      : $SensorExePath"
 Write-Host "  Discovery URL   : $DiscoveryServerUrl"
 Write-Host "  Organization ID : $OrganizationId"
-Write-Host "  Auth Key         : $($PhoenixAuthKey.Substring(0, 8))..."
+if ($PhoenixAuthKey) {
+    Write-Host "  Auth Key        : $($PhoenixAuthKey.Substring(0, 8))..."
+}
 
 $existingProcs = Get-Process minionhost, ActiveConsole -ErrorAction SilentlyContinue
 if ($existingProcs) {
@@ -176,7 +173,10 @@ if ($existingProcs) {
     Start-Sleep -Seconds 10
 }
 
-$installArgs = "DISCOVERY_SERVER_URL=$DiscoveryServerUrl ORGANIZATION_ID=$OrganizationId PHOENIX_AUTH_INSTALLATION_KEY=$PhoenixAuthKey /quiet"
+$installArgs = "/quiet"
+if ($PhoenixAuthKey) {
+    $installArgs = "DISCOVERY_SERVER_URL=$DiscoveryServerUrl ORGANIZATION_ID=$OrganizationId PHOENIX_AUTH_INSTALLATION_KEY=$PhoenixAuthKey /quiet"
+}
 Write-Host "[INFO] Running: $SensorExePath $installArgs"
 
 $wrapperScript = "C:\Temp\run_sensor_install.cmd"

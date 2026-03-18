@@ -313,16 +313,13 @@ print('Bootstrap complete.')
                         sshpass -p '${VM_PASS}' scp ${SSH_OPTS} -r \$(pwd)/ ${VM_USER}@${vmIp}:C:/sensor/sensor-perf-testing/
                     """
 
-                    echo "Installing sensor with Phoenix parameters..."
+                    echo "Installing personalized sensor..."
                     sh """
                         sshpass -p '${VM_PASS}' scp ${SSH_OPTS} tools/Install-Sensor-Phoenix.ps1 \
                             ${VM_USER}@${vmIp}:C:/Temp/Install-Sensor-Phoenix.ps1
                         sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} ${VM_USER}@${vmIp} \
                             "powershell -ExecutionPolicy Bypass -File C:\\Temp\\Install-Sensor-Phoenix.ps1 \
-                                -SensorExePath C:\\Temp\\${sensorExeName} \
-                                -DiscoveryServerUrl ${PHOENIX_DISCOVERY_URL} \
-                                -OrganizationId ${PHOENIX_ORG_ID} \
-                                -PhoenixAuthKey ${PHOENIX_AUTH_KEY}"
+                                -SensorExePath C:\\Temp\\${sensorExeName}"
                     """
                 }
             }
