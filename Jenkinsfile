@@ -15,6 +15,8 @@ IRELEASE_JOB = 'msi-sensor-x64-release-build-integration'
 
 PHOENIX_DISCOVERY_URL = 'https://sensor-discovery-service-dev-us-ashburn-1.cybereason.net'
 PHOENIX_ORG_ID = '1002'
+// TODO: move to Vault or Jenkins credential store when Credentials/Create permission is available
+PHOENIX_AUTH_KEY = '3KZGZN5R1ZWY06NFGSD5XBFBSMJ4N5FQT8Q6V44XZ1EDNVF4BD2'
 
 VM_USER = 'bbtest'
 
@@ -72,7 +74,7 @@ podTemplate(
             stage('Download Sensor Artifacts') {
                 container('python') {
                     withCredentials([
-                        usernamePassword(credentialsId: 'irelease-api-creds',
+                        usernamePassword(credentialsId: 'rejenkins-gcp',
                                          usernameVariable: 'IRELEASE_USER',
                                          passwordVariable: 'IRELEASE_TOKEN')
                     ]) {
@@ -220,41 +222,37 @@ print('Bootstrap complete.')
 
             stage('Install Sensor') {
                 container('python') {
-                    withCredentials([
-                        string(credentialsId: 'phoenix-auth-key', variable: 'PHOENIX_KEY')
-                    ]) {
-                        echo "Copying sensor artifacts to VM..."
-                        sh """
-                            scp -o StrictHostKeyChecking=no sensor-artifacts/${sensorExeName} \
-                                ${VM_USER}@${vmIp}:C:/Temp/${sensorExeName}
-                        """
+                    echo "Copying sensor artifacts to VM..."
+                    sh """
+                        scp -o StrictHostKeyChecking=no sensor-artifacts/${sensorExeName} \
+                            ${VM_USER}@${vmIp}:C:/Temp/${sensorExeName}
+                    """
 
-                        if (params.ENABLE_PROFILING && fileExists('sensor-artifacts/output-x64.zip')) {
-                            sh """
-                                scp -o StrictHostKeyChecking=no sensor-artifacts/output-x64.zip \
-                                    ${VM_USER}@${vmIp}:C:/sensor/output-x64.zip
-                                ssh -o StrictHostKeyChecking=no ${VM_USER}@${vmIp} \
-                                    "New-Item -ItemType Directory -Path C:\\sensor\\pdbs -Force | Out-Null; Expand-Archive -Path C:\\sensor\\output-x64.zip -DestinationPath C:\\sensor\\pdbs -Force"
-                            """
-                        }
-
-                        echo "Copying perf test framework to VM..."
+                    if (params.ENABLE_PROFILING && fileExists('sensor-artifacts/output-x64.zip')) {
                         sh """
-                            scp -o StrictHostKeyChecking=no -r \$(pwd)/ ${VM_USER}@${vmIp}:C:/sensor/sensor-perf-testing/
-                        """
-
-                        echo "Installing sensor with Phoenix parameters..."
-                        sh """
-                            scp -o StrictHostKeyChecking=no tools/Install-Sensor-Phoenix.ps1 \
-                                ${VM_USER}@${vmIp}:C:/Temp/Install-Sensor-Phoenix.ps1
+                            scp -o StrictHostKeyChecking=no sensor-artifacts/output-x64.zip \
+                                ${VM_USER}@${vmIp}:C:/sensor/output-x64.zip
                             ssh -o StrictHostKeyChecking=no ${VM_USER}@${vmIp} \
-                                "powershell -ExecutionPolicy Bypass -File C:\\Temp\\Install-Sensor-Phoenix.ps1 \
-                                    -SensorExePath C:\\Temp\\${sensorExeName} \
-                                    -DiscoveryServerUrl ${PHOENIX_DISCOVERY_URL} \
-                                    -OrganizationId ${PHOENIX_ORG_ID} \
-                                    -PhoenixAuthKey ${PHOENIX_KEY}"
+                                "New-Item -ItemType Directory -Path C:\\sensor\\pdbs -Force | Out-Null; Expand-Archive -Path C:\\sensor\\output-x64.zip -DestinationPath C:\\sensor\\pdbs -Force"
                         """
                     }
+
+                    echo "Copying perf test framework to VM..."
+                    sh """
+                        scp -o StrictHostKeyChecking=no -r \$(pwd)/ ${VM_USER}@${vmIp}:C:/sensor/sensor-perf-testing/
+                    """
+
+                    echo "Installing sensor with Phoenix parameters..."
+                    sh """
+                        scp -o StrictHostKeyChecking=no tools/Install-Sensor-Phoenix.ps1 \
+                            ${VM_USER}@${vmIp}:C:/Temp/Install-Sensor-Phoenix.ps1
+                        ssh -o StrictHostKeyChecking=no ${VM_USER}@${vmIp} \
+                            "powershell -ExecutionPolicy Bypass -File C:\\Temp\\Install-Sensor-Phoenix.ps1 \
+                                -SensorExePath C:\\Temp\\${sensorExeName} \
+                                -DiscoveryServerUrl ${PHOENIX_DISCOVERY_URL} \
+                                -OrganizationId ${PHOENIX_ORG_ID} \
+                                -PhoenixAuthKey ${PHOENIX_AUTH_KEY}"
+                    """
                 }
             }
 
