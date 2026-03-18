@@ -1,4 +1,3 @@
-#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
     Installs Cybereason sensor with Phoenix backend parameters.
@@ -158,12 +157,15 @@ $proc = Start-Process -FilePath $SensorExePath -ArgumentList $argsStr -Wait -Pas
 Write-Host "[INFO] Install exit code: $($proc.ExitCode)"
 
 if ($proc.ExitCode -ne 0) {
-    Write-Host "[ERROR] Sensor installation failed with exit code $($proc.ExitCode)" -ForegroundColor Red
-    exit $proc.ExitCode
+    Write-Host "[WARN] Sensor installer returned exit code $($proc.ExitCode) -- waiting for services anyway" -ForegroundColor Yellow
 }
 
 $ok = Wait-SensorServices -Timeout $TimeoutSeconds
 if (-not $ok) {
+    if ($proc.ExitCode -ne 0) {
+        Write-Host "[ERROR] Install exit code was $($proc.ExitCode) AND services failed to start" -ForegroundColor Red
+        exit $proc.ExitCode
+    }
     Write-Host "[ERROR] Sensor services did not start within ${TimeoutSeconds}s" -ForegroundColor Red
     exit 1
 }
