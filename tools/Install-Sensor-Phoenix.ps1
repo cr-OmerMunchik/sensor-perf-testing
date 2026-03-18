@@ -56,7 +56,7 @@ param(
 
     [switch]$Uninstall,
 
-    [int]$TimeoutSeconds = 300
+    [int]$TimeoutSeconds = 60
 )
 
 $ErrorActionPreference = "Stop"
@@ -174,8 +174,12 @@ if ($existingProcs) {
 $installArgs = "DISCOVERY_SERVER_URL=$DiscoveryServerUrl ORGANIZATION_ID=$OrganizationId PHOENIX_AUTH_INSTALLATION_KEY=$PhoenixAuthKey /quiet"
 Write-Host "[INFO] Running: $SensorExePath $installArgs"
 
+$wrapperScript = "C:\Temp\run_sensor_install.cmd"
+$logFile = "C:\Temp\sensor_install.log"
+Set-Content -Path $wrapperScript -Value "@echo off`r`n`"$SensorExePath`" $installArgs > `"$logFile`" 2>&1`r`necho EXIT_CODE=%ERRORLEVEL% >> `"$logFile`""
+
 $taskName = "SensorInstall_$(Get-Random)"
-$action = New-ScheduledTaskAction -Execute $SensorExePath -Argument $installArgs
+$action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$wrapperScript`""
 $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Force | Out-Null
 Start-ScheduledTask -TaskName $taskName
@@ -185,11 +189,8 @@ $taskElapsed = 0
 while ($taskElapsed -lt $taskTimeout) {
     Start-Sleep -Seconds 5
     $taskElapsed += 5
-    $taskInfo = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
     $taskState = (Get-ScheduledTask -TaskName $taskName).State
-    if ($taskState -ne "Running") {
-        break
-    }
+    if ($taskState -ne "Running") { break }
     Write-Host "  Installer running ($taskElapsed/${taskTimeout}s)..."
 }
 
@@ -197,12 +198,38 @@ $lastResult = (Get-ScheduledTaskInfo -TaskName $taskName).LastTaskResult
 Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
 Write-Host "[INFO] Install exit code (via scheduled task): $lastResult"
 
+if (Test-Path $logFile) {
+    Write-Host "[INFO] Installer log output:"
+    Get-Content $logFile | ForEach-Object { Write-Host "  $_" }
+}
+
 if ($lastResult -ne 0) {
     Write-Host "[WARN] Sensor installer returned exit code $lastResult -- waiting for services anyway" -ForegroundColor Yellow
 }
 
 $ok = Wait-SensorServices -Timeout $TimeoutSeconds
 if (-not $ok) {
+    Write-Host "`n=== DIAGNOSTIC INFO ===" -ForegroundColor Cyan
+    Write-Host "--- Cybereason services ---"
+    Get-Service *Cybereason* -ErrorAction SilentlyContinue | Format-Table Name, Status, StartType -AutoSize
+    Write-Host "--- Cybereason processes ---"
+    Get-Process minionhost, ActiveConsole -ErrorAction SilentlyContinue | Format-Table Name, Id -AutoSize
+    Write-Host "--- C:\Program Files\Cybereason\ ---"
+    Get-ChildItem "C:\Program Files\Cybereason" -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object FullName
+    Write-Host "--- Recent Application event log entries ---"
+    Get-WinEvent -LogName Application -MaxEvents 20 -ErrorAction SilentlyContinue |
+        Where-Object { $_.TimeCreated -gt (Get-Date).AddMinutes(-10) } |
+        Format-Table TimeCreated, Id, LevelDisplayName, Message -Wrap -AutoSize
+    Write-Host "--- Recent System event log entries ---"
+    Get-WinEvent -LogName System -MaxEvents 20 -ErrorAction SilentlyContinue |
+        Where-Object { $_.TimeCreated -gt (Get-Date).AddMinutes(-10) } |
+        Format-Table TimeCreated, Id, LevelDisplayName, Message -Wrap -AutoSize
+    Write-Host "--- MsiInstaller log (last 20) ---"
+    Get-WinEvent -ProviderName MsiInstaller -MaxEvents 20 -ErrorAction SilentlyContinue |
+        Where-Object { $_.TimeCreated -gt (Get-Date).AddMinutes(-10) } |
+        Format-Table TimeCreated, Id, Message -Wrap -AutoSize
+    Write-Host "=== END DIAGNOSTIC INFO ===" -ForegroundColor Cyan
+
     if ($lastResult -ne 0) {
         Write-Host "[ERROR] Install exit code was $lastResult AND services failed to start" -ForegroundColor Red
         exit 1
