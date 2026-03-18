@@ -56,7 +56,7 @@ param(
 
     [switch]$Uninstall,
 
-    [int]$TimeoutSeconds = 60
+    [int]$TimeoutSeconds = 300
 )
 
 $ErrorActionPreference = "Stop"
@@ -81,7 +81,12 @@ function Wait-SensorServices {
         Start-Sleep -Seconds 10
         $elapsed += 10
         $missing = $targetProcesses | Where-Object { $_ -notin $runningNames }
-        Write-Host "  Waiting ($elapsed/${Timeout}s) -- Running: [$($runningNames -join ', ')] Missing: [$($missing -join ', ')]"
+        $msiRunning = Get-Process msiexec -ErrorAction SilentlyContinue
+        $crSvc = Get-Service *Cybereason* -ErrorAction SilentlyContinue
+        $extra = ""
+        if ($msiRunning) { $extra += " msiexec:running" }
+        if ($crSvc) { $extra += " svc:$($crSvc.Name -join ',')" }
+        Write-Host "  Waiting ($elapsed/${Timeout}s) -- Running: [$($runningNames -join ', ')] Missing: [$($missing -join ', ')]$extra"
     }
 
     Write-Host "[ERROR] Timed out waiting for sensor processes after ${Timeout}s" -ForegroundColor Red
@@ -201,6 +206,18 @@ Write-Host "[INFO] Install exit code (via scheduled task): $lastResult"
 if (Test-Path $logFile) {
     Write-Host "[INFO] Installer log output:"
     Get-Content $logFile | ForEach-Object { Write-Host "  $_" }
+}
+
+$msiWait = 0
+while ($msiWait -lt 120) {
+    $msi = Get-Process msiexec -ErrorAction SilentlyContinue
+    if (-not $msi) { break }
+    Start-Sleep -Seconds 5
+    $msiWait += 5
+    Write-Host "  Waiting for msiexec to finish ($msiWait/120s)..."
+}
+if ($msiWait -gt 0) {
+    Write-Host "[INFO] msiexec finished after ${msiWait}s"
 }
 
 if ($lastResult -ne 0) {
