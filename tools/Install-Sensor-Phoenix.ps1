@@ -108,8 +108,24 @@ if (-not (Test-Path $SensorExePath)) {
 if ($Uninstall) {
     Write-Host "=== Uninstalling Sensor ===" -ForegroundColor Yellow
     Write-Host "[INFO] Running: $SensorExePath /uninstall /quiet"
-    $proc = Start-Process -FilePath $SensorExePath -ArgumentList "/uninstall /quiet" -Wait -PassThru -NoNewWindow
-    Write-Host "[INFO] Uninstall exit code: $($proc.ExitCode)"
+
+    $taskName = "SensorUninstall_$(Get-Random)"
+    $action = New-ScheduledTaskAction -Execute $SensorExePath -Argument "/uninstall /quiet"
+    $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Force | Out-Null
+    Start-ScheduledTask -TaskName $taskName
+
+    $taskTimeout = 120
+    $taskElapsed = 0
+    while ($taskElapsed -lt $taskTimeout) {
+        Start-Sleep -Seconds 5
+        $taskElapsed += 5
+        $taskState = (Get-ScheduledTask -TaskName $taskName).State
+        if ($taskState -ne "Running") { break }
+    }
+    $lastResult = (Get-ScheduledTaskInfo -TaskName $taskName).LastTaskResult
+    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+    Write-Host "[INFO] Uninstall exit code: $lastResult"
 
     $elapsed = 0
     while ($elapsed -lt 120) {
@@ -122,7 +138,7 @@ if ($Uninstall) {
         $elapsed += 5
     }
 
-    if ($proc.ExitCode -ne 0) { exit $proc.ExitCode }
+    if ($lastResult -ne 0) { exit 1 }
     exit 0
 }
 
@@ -140,31 +156,56 @@ Write-Host "  Auth Key         : $($PhoenixAuthKey.Substring(0, 8))..."
 $existingProcs = Get-Process minionhost, ActiveConsole -ErrorAction SilentlyContinue
 if ($existingProcs) {
     Write-Host "[WARN] Sensor processes already running. Uninstalling first..." -ForegroundColor Yellow
-    $proc = Start-Process -FilePath $SensorExePath -ArgumentList "/uninstall /quiet" -Wait -PassThru -NoNewWindow
-    Write-Host "[INFO] Uninstall exit code: $($proc.ExitCode)"
+    $unTaskName = "SensorPreUninstall_$(Get-Random)"
+    $unAction = New-ScheduledTaskAction -Execute $SensorExePath -Argument "/uninstall /quiet"
+    $unPrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    Register-ScheduledTask -TaskName $unTaskName -Action $unAction -Principal $unPrincipal -Force | Out-Null
+    Start-ScheduledTask -TaskName $unTaskName
+    $unElapsed = 0
+    while ($unElapsed -lt 120) {
+        Start-Sleep -Seconds 5
+        $unElapsed += 5
+        if ((Get-ScheduledTask -TaskName $unTaskName).State -ne "Running") { break }
+    }
+    Unregister-ScheduledTask -TaskName $unTaskName -Confirm:$false -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 10
 }
 
-$installArgs = @(
-    "DISCOVERY_SERVER_URL=$DiscoveryServerUrl",
-    "ORGANIZATION_ID=$OrganizationId",
-    "PHOENIX_AUTH_INSTALLATION_KEY=$PhoenixAuthKey",
-    "/quiet"
-)
-$argsStr = $installArgs -join ' '
-Write-Host "[INFO] Running: $SensorExePath $argsStr"
-$proc = Start-Process -FilePath $SensorExePath -ArgumentList $argsStr -Wait -PassThru -NoNewWindow
-Write-Host "[INFO] Install exit code: $($proc.ExitCode)"
+$installArgs = "DISCOVERY_SERVER_URL=$DiscoveryServerUrl ORGANIZATION_ID=$OrganizationId PHOENIX_AUTH_INSTALLATION_KEY=$PhoenixAuthKey /quiet"
+Write-Host "[INFO] Running: $SensorExePath $installArgs"
 
-if ($proc.ExitCode -ne 0) {
-    Write-Host "[WARN] Sensor installer returned exit code $($proc.ExitCode) -- waiting for services anyway" -ForegroundColor Yellow
+$taskName = "SensorInstall_$(Get-Random)"
+$action = New-ScheduledTaskAction -Execute $SensorExePath -Argument $installArgs
+$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Force | Out-Null
+Start-ScheduledTask -TaskName $taskName
+
+$taskTimeout = 120
+$taskElapsed = 0
+while ($taskElapsed -lt $taskTimeout) {
+    Start-Sleep -Seconds 5
+    $taskElapsed += 5
+    $taskInfo = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
+    $taskState = (Get-ScheduledTask -TaskName $taskName).State
+    if ($taskState -ne "Running") {
+        break
+    }
+    Write-Host "  Installer running ($taskElapsed/${taskTimeout}s)..."
+}
+
+$lastResult = (Get-ScheduledTaskInfo -TaskName $taskName).LastTaskResult
+Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+Write-Host "[INFO] Install exit code (via scheduled task): $lastResult"
+
+if ($lastResult -ne 0) {
+    Write-Host "[WARN] Sensor installer returned exit code $lastResult -- waiting for services anyway" -ForegroundColor Yellow
 }
 
 $ok = Wait-SensorServices -Timeout $TimeoutSeconds
 if (-not $ok) {
-    if ($proc.ExitCode -ne 0) {
-        Write-Host "[ERROR] Install exit code was $($proc.ExitCode) AND services failed to start" -ForegroundColor Red
-        exit $proc.ExitCode
+    if ($lastResult -ne 0) {
+        Write-Host "[ERROR] Install exit code was $lastResult AND services failed to start" -ForegroundColor Red
+        exit 1
     }
     Write-Host "[ERROR] Sensor services did not start within ${TimeoutSeconds}s" -ForegroundColor Red
     exit 1
