@@ -170,7 +170,7 @@ for a in arts:
     "server": "loving-jepsen-1-t.eng.cybereason.net",
     "port": "443",
     "organization": "cybereason",
-    "organizationId": 1002,
+    "organizationId": "1002",
     "state": "ACTIVE_NORMAL",
     "discoveryServerUrl": "${PHOENIX_DISCOVERY_URL}"
 }
