@@ -243,6 +243,8 @@ print('Bootstrap complete.')
 
                     echo "Copying perf test framework to VM..."
                     sh """
+                        sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} ${VM_USER}@${vmIp} \
+                            "New-Item -ItemType Directory -Path C:\\sensor\\sensor-perf-testing -Force | Out-Null; New-Item -ItemType Directory -Path C:\\Temp -Force | Out-Null; New-Item -ItemType Directory -Path C:\\PerfTest\\reports -Force | Out-Null; New-Item -ItemType Directory -Path C:\\PerfTest\\logs -Force | Out-Null"
                         sshpass -p '${VM_PASS}' scp ${SSH_OPTS} -r \$(pwd)/ ${VM_USER}@${vmIp}:C:/sensor/sensor-perf-testing/
                     """
 
