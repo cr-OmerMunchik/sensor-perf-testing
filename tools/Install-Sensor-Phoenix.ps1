@@ -173,9 +173,9 @@ if ($existingProcs) {
     Start-Sleep -Seconds 10
 }
 
-$installArgs = "/quiet"
+$installArgs = "/quiet /l*v C:\Temp\sensor_msi.log"
 if ($PhoenixAuthKey) {
-    $installArgs = "DISCOVERY_SERVER_URL=$DiscoveryServerUrl ORGANIZATION_ID=$OrganizationId PHOENIX_AUTH_INSTALLATION_KEY=$PhoenixAuthKey /quiet"
+    $installArgs = "DISCOVERY_SERVER_URL=$DiscoveryServerUrl ORGANIZATION_ID=$OrganizationId PHOENIX_AUTH_INSTALLATION_KEY=$PhoenixAuthKey /quiet /l*v C:\Temp\sensor_msi.log"
 }
 Write-Host "[INFO] Running: $SensorExePath $installArgs"
 
@@ -219,6 +219,21 @@ while ($msiWait -lt 120) {
 if ($msiWait -gt 0) {
     Write-Host "[INFO] msiexec finished after ${msiWait}s"
 }
+
+Write-Host "[INFO] Checking for MSI log..."
+if (Test-Path "C:\Temp\sensor_msi.log") {
+    $msiLines = Get-Content "C:\Temp\sensor_msi.log" -Tail 30
+    Write-Host "[INFO] Last 30 lines of MSI log:"
+    $msiLines | ForEach-Object { Write-Host "  $_" }
+} else {
+    Write-Host "[INFO] No MSI log found at C:\Temp\sensor_msi.log -- MSI may not have been extracted"
+}
+
+Write-Host "[INFO] TEMP folder contents after install:"
+Get-ChildItem $env:TEMP -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt (Get-Date).AddMinutes(-5) } |
+    Format-Table Name, Length, LastWriteTime -AutoSize
+Get-ChildItem "C:\Windows\Temp" -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt (Get-Date).AddMinutes(-5) } |
+    Format-Table Name, Length, LastWriteTime -AutoSize
 
 if ($lastResult -ne 0) {
     Write-Host "[WARN] Sensor installer returned exit code $lastResult -- waiting for services anyway" -ForegroundColor Yellow

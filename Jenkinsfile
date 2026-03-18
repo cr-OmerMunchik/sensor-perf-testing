@@ -182,17 +182,18 @@ PJSON
                         ls -lh sensor-artifacts/personalized/
                     """
 
-                    sensorExeName = sh(returnStdout: true, script:
+                    String persExeName = sh(returnStdout: true, script:
                         "ls sensor-artifacts/personalized/CybereasonSensor64*.exe 2>/dev/null | head -1 | xargs basename || echo ''"
                     ).trim()
 
-                    if (!sensorExeName) {
+                    if (!persExeName) {
                         error("Personalization failed -- no personalized EXE found in sensor-artifacts/personalized/")
                     }
 
-                    sh "cp sensor-artifacts/personalized/${sensorExeName} sensor-artifacts/${sensorExeName}"
-                    echo "Personalized sensor EXE: ${sensorExeName}"
-                    currentBuild.displayName = "#${currentBuild.number}:${sensorExeName.replaceAll('CybereasonSensor64_', '').replaceAll('.exe', '')}"
+                    sensorExeName = "CybereasonSensor64_personalized.exe"
+                    sh "cp sensor-artifacts/personalized/${persExeName} sensor-artifacts/${sensorExeName}"
+                    echo "Personalized sensor EXE: ${persExeName} -> ${sensorExeName}"
+                    currentBuild.displayName = "#${currentBuild.number}:${persExeName.replaceAll('CybereasonSensor64_', '').replaceAll('.exe', '')}"
                 }
             }
 
