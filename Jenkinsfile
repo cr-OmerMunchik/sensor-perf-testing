@@ -19,11 +19,13 @@ PHOENIX_ORG_ID = '1002'
 PHOENIX_AUTH_KEY = '3KZGZN5R1ZWY06NFGSD5XBFBSMJ4N5FQT8Q6V44XZ1EDNVF4BD2'
 
 VM_USER = 'bbtest'
+VM_PASS = 'Password1'
+SSH_OPTS = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR'
 
 properties([
     parameters([
-        string(name: 'VM_TEMPLATE', defaultValue: 'BB_Win11_x64_23H2_With_Apps_100GB',
-               description: 'VMware template name. Use BB_Win11_x64_23H2_Performance when available.'),
+        string(name: 'VM_TEMPLATE', defaultValue: 'BB_Win11_x64_23H2_Performance',
+               description: 'VMware template name for the test VM.'),
         booleanParam(name: 'ENABLE_PROFILING', defaultValue: true,
                      description: 'Enable ETL profiling (downloads ~1.1 GB PDBs, provides CPU hotspot analysis)'),
         booleanParam(name: 'HEAVY_MODE', defaultValue: false,
@@ -73,6 +75,8 @@ podTemplate(
 
             stage('Download Sensor Artifacts') {
                 container('python') {
+                    sh "apt-get update -qq && apt-get install -y -qq sshpass openssh-client > /dev/null 2>&1"
+
                     withCredentials([
                         usernamePassword(credentialsId: 'rejenkins-gcp',
                                          usernameVariable: 'IRELEASE_USER',
@@ -173,7 +177,7 @@ for a in arts:
                             python3 -c "
 import winrm, time, sys
 
-session = winrm.Session('http://${vmIp}:5985/wsman', auth=('${VM_USER}', 'Password1'), transport='ntlm')
+session = winrm.Session('http://${vmIp}:5985/wsman', auth=('${VM_USER}', '${VM_PASS}'), transport='ntlm')
 
 def run(cmd, desc):
     print(f'  [{desc}]...')
@@ -205,7 +209,7 @@ print('Bootstrap complete.')
                         echo "Waiting for SSH to become available..."
                         sh """
                             for i in \$(seq 1 30); do
-                                if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o PasswordAuthentication=yes \
+                                if sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} \
                                     ${VM_USER}@${vmIp} 'echo SSH_OK' 2>/dev/null; then
                                     echo "SSH is ready."
                                     exit 0
@@ -224,29 +228,29 @@ print('Bootstrap complete.')
                 container('python') {
                     echo "Copying sensor artifacts to VM..."
                     sh """
-                        scp -o StrictHostKeyChecking=no sensor-artifacts/${sensorExeName} \
+                        sshpass -p '${VM_PASS}' scp ${SSH_OPTS} sensor-artifacts/${sensorExeName} \
                             ${VM_USER}@${vmIp}:C:/Temp/${sensorExeName}
                     """
 
                     if (params.ENABLE_PROFILING && fileExists('sensor-artifacts/output-x64.zip')) {
                         sh """
-                            scp -o StrictHostKeyChecking=no sensor-artifacts/output-x64.zip \
+                            sshpass -p '${VM_PASS}' scp ${SSH_OPTS} sensor-artifacts/output-x64.zip \
                                 ${VM_USER}@${vmIp}:C:/sensor/output-x64.zip
-                            ssh -o StrictHostKeyChecking=no ${VM_USER}@${vmIp} \
+                            sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} ${VM_USER}@${vmIp} \
                                 "New-Item -ItemType Directory -Path C:\\sensor\\pdbs -Force | Out-Null; Expand-Archive -Path C:\\sensor\\output-x64.zip -DestinationPath C:\\sensor\\pdbs -Force"
                         """
                     }
 
                     echo "Copying perf test framework to VM..."
                     sh """
-                        scp -o StrictHostKeyChecking=no -r \$(pwd)/ ${VM_USER}@${vmIp}:C:/sensor/sensor-perf-testing/
+                        sshpass -p '${VM_PASS}' scp ${SSH_OPTS} -r \$(pwd)/ ${VM_USER}@${vmIp}:C:/sensor/sensor-perf-testing/
                     """
 
                     echo "Installing sensor with Phoenix parameters..."
                     sh """
-                        scp -o StrictHostKeyChecking=no tools/Install-Sensor-Phoenix.ps1 \
+                        sshpass -p '${VM_PASS}' scp ${SSH_OPTS} tools/Install-Sensor-Phoenix.ps1 \
                             ${VM_USER}@${vmIp}:C:/Temp/Install-Sensor-Phoenix.ps1
-                        ssh -o StrictHostKeyChecking=no ${VM_USER}@${vmIp} \
+                        sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} ${VM_USER}@${vmIp} \
                             "powershell -ExecutionPolicy Bypass -File C:\\Temp\\Install-Sensor-Phoenix.ps1 \
                                 -SensorExePath C:\\Temp\\${sensorExeName} \
                                 -DiscoveryServerUrl ${PHOENIX_DISCOVERY_URL} \
@@ -270,7 +274,7 @@ print('Bootstrap complete.')
 
                     timeout(time: params.HEAVY_MODE ? 5 : 2, unit: 'HOURS') {
                         sh """
-                            ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=60 ${VM_USER}@${vmIp} \
+                            sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} -o ServerAliveInterval=60 ${VM_USER}@${vmIp} \
                                 "Set-Location C:\\sensor\\sensor-perf-testing; powershell -ExecutionPolicy Bypass -File .\\Run-PerfTest.ps1 \
                                     -ReportsDir C:\\PerfTest\\reports \
                                     ${modeFlag} ${profilingFlags} ${scenariosFlag} 2>&1"
@@ -283,8 +287,8 @@ print('Bootstrap complete.')
                 container('python') {
                     sh """
                         mkdir -p reports logs
-                        scp -o StrictHostKeyChecking=no -r ${VM_USER}@${vmIp}:C:/PerfTest/reports/* reports/ || true
-                        scp -o StrictHostKeyChecking=no -r ${VM_USER}@${vmIp}:C:/PerfTest/logs/* logs/ || true
+                        sshpass -p '${VM_PASS}' scp ${SSH_OPTS} -r ${VM_USER}@${vmIp}:C:/PerfTest/reports/* reports/ || true
+                        sshpass -p '${VM_PASS}' scp ${SSH_OPTS} -r ${VM_USER}@${vmIp}:C:/PerfTest/logs/* logs/ || true
                         echo "--- Reports collected ---"
                         ls -lh reports/ || true
                         ls -lh logs/ || true
