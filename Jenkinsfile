@@ -384,12 +384,12 @@ print('Bootstrap complete.')
 Remove-Item \$markerFile -ErrorAction SilentlyContinue
 try {
     & C:\\sensor\\sensor-perf-testing\\Run-PerfTest.ps1 -ReportsDir C:\\PerfTest\\reports ${modeFlag} ${profilingFlags} ${scenariosFlag} *>&1 | Tee-Object -FilePath \$logFile
-    \$exitCode = \$LASTEXITCODE
+    \$exitCode = if (\$LASTEXITCODE) { \$LASTEXITCODE } else { 0 }
 } catch {
     \$_ | Out-File -Append \$logFile
     \$exitCode = 1
 }
-\$exitCode | Set-Content \$markerFile
+[string]\$exitCode | Set-Content -Path \$markerFile -NoNewline
 """
                     sh """
                         sshpass -p '${VM_PASS}' scp ${SSH_OPTS} run-perf-wrapper.ps1 ${VM_USER}@${vmIp}:C:/PerfTest/run-perf-wrapper.ps1
@@ -425,7 +425,9 @@ try {
                     // Check exit code from marker
                     def perfExitCode = sh(script: """
                         sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} ${VM_USER}@${vmIp} \
-                            "powershell -Command \\"(Get-Content C:\\\\PerfTest\\\\perf-done.marker).Trim()\\""
+                            "powershell -Command \\"\\
+                            \\\$c = Get-Content C:\\\\PerfTest\\\\perf-done.marker -Raw -ErrorAction SilentlyContinue;\\
+                            if (\\\$c) { Write-Host \\\$c.Trim() } else { Write-Host 0 }\\""
                     """, returnStdout: true).trim()
                     echo "Perf test exit code: ${perfExitCode}"
                     if (perfExitCode != '0' && perfExitCode != '') {
