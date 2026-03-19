@@ -105,9 +105,9 @@ function Write-Log {
     $line = "[$ts] [$Level] $Message"
     Add-Content -Path $logFile -Value $line -Encoding UTF8
     switch ($Level) {
-        "WARN"  { Write-Host "[WARN] $Message" -ForegroundColor Yellow }
-        "ERROR" { Write-Host "[ERROR] $Message" -ForegroundColor Red }
-        default {}
+        "WARN"  { Write-Host "[$ts] [WARN] $Message" -ForegroundColor Yellow }
+        "ERROR" { Write-Host "[$ts] [ERROR] $Message" -ForegroundColor Red }
+        default { Write-Host "[$ts] $Message" }
     }
 }
 

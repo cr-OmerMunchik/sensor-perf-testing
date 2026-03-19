@@ -325,6 +325,16 @@ print('Bootstrap complete.')
                             ${VM_USER}@${vmIp}:C:/sensor/sensor-perf-testing/
                     """
 
+                    if (params.ENABLE_PROFILING) {
+                        echo "Installing profiling prerequisites (.NET SDK 8, WPT)..."
+                        sh """
+                            sshpass -p '${VM_PASS}' scp ${SSH_OPTS} tools/Bootstrap-VM.ps1 \
+                                ${VM_USER}@${vmIp}:C:/Temp/Bootstrap-VM.ps1
+                            sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} ${VM_USER}@${vmIp} \
+                                "powershell -ExecutionPolicy Bypass -File C:\\Temp\\Bootstrap-VM.ps1 -SkipSSH"
+                        """
+                    }
+
                     echo "Installing personalized sensor..."
                     sh """
                         sshpass -p '${VM_PASS}' scp ${SSH_OPTS} tools/Install-Sensor-Phoenix.ps1 \
@@ -422,6 +432,7 @@ try {
                         mkdir -p reports logs
                         sshpass -p '${VM_PASS}' scp ${SSH_OPTS} -r ${VM_USER}@${vmIp}:C:/PerfTest/reports/* reports/ || true
                         sshpass -p '${VM_PASS}' scp ${SSH_OPTS} -r ${VM_USER}@${vmIp}:C:/PerfTest/logs/* logs/ || true
+                        sshpass -p '${VM_PASS}' scp ${SSH_OPTS} ${VM_USER}@${vmIp}:C:/PerfTest/perf-output.log logs/perf-console-output.log || true
                         echo "--- Reports collected ---"
                         ls -lh reports/ || true
                         ls -lh logs/ || true
