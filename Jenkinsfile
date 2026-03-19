@@ -352,9 +352,9 @@ print('Bootstrap complete.')
                     timeout(time: params.HEAVY_MODE ? 5 : 2, unit: 'HOURS') {
                         sh """
                             sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} -o ServerAliveInterval=60 ${VM_USER}@${vmIp} \
-                                "Set-Location C:\\sensor\\sensor-perf-testing; powershell -ExecutionPolicy Bypass -File .\\Run-PerfTest.ps1 \
-                                    -ReportsDir C:\\PerfTest\\reports \
-                                    ${modeFlag} ${profilingFlags} ${scenariosFlag} 2>&1"
+                                "powershell -ExecutionPolicy Bypass -Command \\"Set-Location C:\\\\sensor\\\\sensor-perf-testing; .\\\\Run-PerfTest.ps1 \
+                                    -ReportsDir C:\\\\PerfTest\\\\reports \
+                                    ${modeFlag} ${profilingFlags} ${scenariosFlag}\\" 2>&1"
                         """
                     }
                 }
