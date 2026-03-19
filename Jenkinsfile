@@ -259,43 +259,34 @@ PJSON
 
             stage('Bootstrap VM') {
                 if (params.SKIP_BOOTSTRAP) {
-                    echo "Skipping bootstrap (SKIP_BOOTSTRAP=true)"
+                    echo "Skipping bootstrap (SKIP_BOOTSTRAP=true) -- template already has SSH, .NET 8, WPT"
                     org.jenkinsci.plugins.pipeline.modeldefinition.Utils.markStageSkippedForConditional(STAGE_NAME)
                 } else {
                     container('python') {
-                        echo "Bootstrapping VM at ${vmIp} -- installing SSH, .NET SDK 8, WPT"
-                        sh """
-                            pip install pywinrm --quiet
-                            python3 -c "
-import winrm, time, sys
-
+                        echo "Bootstrapping VM at ${vmIp} via WinRM..."
+                        writeFile file: 'bootstrap-winrm.py', text: """
+import winrm, sys
 session = winrm.Session('http://${vmIp}:5985/wsman', auth=('${VM_USER}', '${VM_PASS}'), transport='ntlm')
-
 def run(cmd, desc):
-    print(f'  [{desc}]...')
+    print('  [%s]...' % desc)
     r = session.run_ps(cmd)
     if r.std_out: print(r.std_out.decode().strip())
     if r.std_err: print(r.std_err.decode().strip())
-    if r.status_code != 0:
-        print(f'  [WARN] {desc} returned exit code {r.status_code}')
+    if r.status_code != 0: print('  [WARN] %s exit code %d' % (desc, r.status_code))
     return r.status_code
-
-# Install OpenSSH Server
-run('Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0', 'Install OpenSSH Server')
-run('Set-Service -Name sshd -StartupType Automatic', 'Set sshd to auto-start')
+run('Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0', 'Install OpenSSH')
+run('Set-Service -Name sshd -StartupType Automatic', 'sshd auto-start')
 run('Start-Service sshd', 'Start sshd')
-run("New-NetFirewallRule -Name sshd -DisplayName 'OpenSSH Server' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 -ErrorAction SilentlyContinue", 'Firewall rule')
-run("New-ItemProperty -Path 'HKLM:\\\\SOFTWARE\\\\OpenSSH' -Name DefaultShell -Value 'C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe' -PropertyType String -Force", 'Set PowerShell as default SSH shell')
-
-# Install .NET SDK 8
-run('winget install Microsoft.DotNet.SDK.8 --accept-package-agreements --accept-source-agreements --silent', 'Install .NET SDK 8')
-
-# Verify
+run("New-NetFirewallRule -Name sshd -DisplayName 'OpenSSH Server' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 -EA SilentlyContinue", 'Firewall rule')
+run("New-ItemProperty -Path 'HKLM:\\\\SOFTWARE\\\\OpenSSH' -Name DefaultShell -Value 'C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe' -PropertyType String -Force", 'Default shell')
+run('winget install Microsoft.DotNet.SDK.8 --accept-package-agreements --accept-source-agreements --silent', '.NET SDK 8')
 run('ssh -V', 'Verify SSH')
-run('dotnet --version', 'Verify .NET SDK')
-
+run('dotnet --version', 'Verify .NET')
 print('Bootstrap complete.')
-"
+"""
+                        sh """
+                            pip install pywinrm --quiet
+                            python3 bootstrap-winrm.py
                         """
 
                         echo "Waiting for SSH to become available..."
