@@ -155,6 +155,27 @@ if ($PhoenixAuthKey) {
     Write-Host "  Auth Key        : $($PhoenixAuthKey.Substring(0, 8))..."
 }
 
+Write-Host "[INFO] Checking prerequisites..."
+$vcKey = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" -ErrorAction SilentlyContinue
+if ($vcKey) {
+    Write-Host "[INFO] VC++ x64 runtime already installed (v$($vcKey.Major).$($vcKey.Minor).$($vcKey.Bld))"
+} else {
+    Write-Host "[INFO] VC++ x64 runtime not found -- installing..."
+    $vcUrl = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+    $vcExe = "C:\Temp\vc_redist.x64.exe"
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    Invoke-WebRequest -Uri $vcUrl -OutFile $vcExe -UseBasicParsing
+    $vcProc = Start-Process -FilePath $vcExe -ArgumentList "/install /quiet /norestart" -Wait -PassThru
+    Write-Host "[INFO] VC++ install exit code: $($vcProc.ExitCode)"
+    $vcCheck = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" -ErrorAction SilentlyContinue
+    if ($vcCheck) {
+        Write-Host "[OK] VC++ x64 runtime installed successfully"
+    } else {
+        Write-Host "[ERROR] VC++ x64 runtime installation failed" -ForegroundColor Red
+        exit 1
+    }
+}
+
 $existingProcs = Get-Process minionhost, ActiveConsole -ErrorAction SilentlyContinue
 if ($existingProcs) {
     Write-Host "[WARN] Sensor processes already running. Uninstalling first..." -ForegroundColor Yellow
