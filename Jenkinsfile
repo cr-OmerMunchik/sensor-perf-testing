@@ -318,31 +318,22 @@ print('Bootstrap complete.')
                     """
                     echo "Copied both personalized (${sensorExeName}) and original (${rawExeName}) to C:\\Temp"
 
-                    if (params.ENABLE_PROFILING && fileExists('sensor-artifacts/output-x64.zip')) {
-                        sh """
-                            sshpass -p '${VM_PASS}' scp ${SSH_OPTS} sensor-artifacts/output-x64.zip \
-                                ${VM_USER}@${vmIp}:C:/sensor/output-x64.zip
-                            sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} ${VM_USER}@${vmIp} \
-                                "powershell -Command \\"New-Item -ItemType Directory -Path C:\\\\sensor\\\\pdbs -Force | Out-Null; Expand-Archive -Path C:\\\\sensor\\\\output-x64.zip -DestinationPath C:\\\\sensor\\\\pdbs -Force\\""
-                        """
-                    }
-
                     echo "Creating target directories and copying perf test framework to VM..."
                     sh """
                         sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} ${VM_USER}@${vmIp} \
-                            "powershell -Command \\"New-Item -ItemType Directory -Path C:\\\\sensor\\\\sensor-perf-testing, C:\\\\Temp, C:\\\\PerfTest\\\\reports, C:\\\\PerfTest\\\\logs -Force | Out-Null\\""
+                            "powershell -Command \\"New-Item -ItemType Directory -Path C:\\\\sensor\\\\sensor-perf-testing, C:\\\\sensor\\\\pdbs, C:\\\\Temp, C:\\\\PerfTest\\\\reports, C:\\\\PerfTest\\\\logs -Force | Out-Null\\""
                         cd \$(pwd) && sshpass -p '${VM_PASS}' scp ${SSH_OPTS} -r \
                             Run-PerfTest.ps1 tools/ test-scenarios/ setup-telegraf/ \
                             ${VM_USER}@${vmIp}:C:/sensor/sensor-perf-testing/
                     """
 
-                    if (params.ENABLE_PROFILING) {
-                        echo "Installing profiling prerequisites (.NET SDK 8, WPT)..."
+                    if (params.ENABLE_PROFILING && fileExists('sensor-artifacts/output-x64.zip')) {
+                        echo "Uploading PDB archive (1.2 GB) and extracting on VM..."
                         sh """
-                            sshpass -p '${VM_PASS}' scp ${SSH_OPTS} tools/Bootstrap-VM.ps1 \
-                                ${VM_USER}@${vmIp}:C:/Temp/Bootstrap-VM.ps1
+                            sshpass -p '${VM_PASS}' scp ${SSH_OPTS} sensor-artifacts/output-x64.zip \
+                                ${VM_USER}@${vmIp}:C:/sensor/output-x64.zip
                             sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} ${VM_USER}@${vmIp} \
-                                "powershell -ExecutionPolicy Bypass -File C:\\Temp\\Bootstrap-VM.ps1 -SkipSSH"
+                                "powershell -Command \\"Expand-Archive -Path C:\\\\sensor\\\\output-x64.zip -DestinationPath C:\\\\sensor\\\\pdbs -Force; Remove-Item C:\\\\sensor\\\\output-x64.zip -Force\\""
                         """
                     }
 
