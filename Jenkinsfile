@@ -65,6 +65,7 @@ podTemplate(
         String envName = "pt-pri-${currentBuild.number}-${suiteRunId}"
         String vmIp = ''
         String sensorExeName = ''
+        String rawExeName = ''
         boolean isVmDeployed = false
 
         currentBuild.displayName = "#${currentBuild.number}"
@@ -128,7 +129,7 @@ for a in arts:
                         }
                     }
 
-                    String rawExeName = sh(returnStdout: true, script:
+                    rawExeName = sh(returnStdout: true, script:
                         "ls sensor-artifacts/CybereasonSensor64*.exe | head -1 | xargs basename"
                     ).trim()
                     echo "Raw sensor EXE: ${rawExeName}"
