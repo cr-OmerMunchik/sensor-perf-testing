@@ -47,7 +47,7 @@ param(
 
     [string]$DiscoveryServerUrl = "https://sensor-discovery-service-dev-us-ashburn-1.cybereason.net",
 
-    [string]$OrganizationId = "1002",
+    [string]$OrganizationId = "TGRAMT1XDGPP35VV58FD3NS11H",
 
     [Parameter(Mandatory = $false)]
     [string]$PhoenixAuthKey,

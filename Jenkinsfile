@@ -15,7 +15,7 @@ IRELEASE_JOB = 'msi-sensor-x64-release-build-integration'
 IRELEASE_PERSONALIZER_JOB = 'personalization-build-integration'
 
 PHOENIX_DISCOVERY_URL = 'https://sensor-discovery-service-dev-us-ashburn-1.cybereason.net'
-PHOENIX_ORG_ID = '1002'
+PHOENIX_ORG_ID = 'TGRAMT1XDGPP35VV58FD3NS11H'
 // TODO: move to Vault or Jenkins credential store when Credentials/Create permission is available
 PHOENIX_AUTH_KEY = '3KZGZN5R1ZWY06NFGSD5XBFBSMJ4N5FQT8Q6V44XZ1EDNVF4BD2'
 
@@ -169,12 +169,12 @@ for a in arts:
 {
     "msi_files": ["../sensor-artifacts/${rawExeName}"],
     "output_folder": "../sensor-artifacts/personalized/",
-    "signon_server": "loving-jepsen-r.eng.cybereason.net",
+    "signon_server": "z-razor-r.eng.cybereason.net",
     "signon_port": "443",
-    "server": "loving-jepsen-1-t.eng.cybereason.net",
+    "server": "z-razor-1-t.eng.cybereason.net",
     "port": "443",
     "organization": "cybereason",
-    "organizationId": "1002",
+    "organizationId": "TGRAMT1XDGPP35VV58FD3NS11H",
     "state": "ACTIVE_NORMAL",
     "discoveryServerUrl": "${PHOENIX_DISCOVERY_URL}",
     "isOIDPersonalization": true
@@ -301,7 +301,10 @@ print('Bootstrap complete.')
                     sh """
                         sshpass -p '${VM_PASS}' scp ${SSH_OPTS} sensor-artifacts/${sensorExeName} \
                             ${VM_USER}@${vmIp}:C:/Temp/${sensorExeName}
+                        sshpass -p '${VM_PASS}' scp ${SSH_OPTS} sensor-artifacts/${rawExeName} \
+                            ${VM_USER}@${vmIp}:C:/Temp/${rawExeName}
                     """
+                    echo "Copied both personalized (${sensorExeName}) and original (${rawExeName}) to C:\\Temp"
 
                     if (params.ENABLE_PROFILING && fileExists('sensor-artifacts/output-x64.zip')) {
                         sh """
@@ -325,7 +328,10 @@ print('Bootstrap complete.')
                             ${VM_USER}@${vmIp}:C:/Temp/Install-Sensor-Phoenix.ps1
                         sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} ${VM_USER}@${vmIp} \
                             "powershell -ExecutionPolicy Bypass -File C:\\Temp\\Install-Sensor-Phoenix.ps1 \
-                                -SensorExePath C:\\Temp\\${sensorExeName}"
+                                -SensorExePath C:\\Temp\\${sensorExeName} \
+                                -DiscoveryServerUrl ${PHOENIX_DISCOVERY_URL} \
+                                -OrganizationId ${PHOENIX_ORG_ID} \
+                                -PhoenixAuthKey ${PHOENIX_AUTH_KEY}"
                     """
                 }
             }
