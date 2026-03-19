@@ -320,7 +320,9 @@ print('Bootstrap complete.')
                     sh """
                         sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} ${VM_USER}@${vmIp} \
                             "powershell -Command \\"New-Item -ItemType Directory -Path C:\\\\sensor\\\\sensor-perf-testing, C:\\\\Temp, C:\\\\PerfTest\\\\reports, C:\\\\PerfTest\\\\logs -Force | Out-Null\\""
-                        sshpass -p '${VM_PASS}' scp ${SSH_OPTS} -r \$(pwd)/ ${VM_USER}@${vmIp}:C:/sensor/sensor-perf-testing/
+                        cd \$(pwd) && sshpass -p '${VM_PASS}' scp ${SSH_OPTS} -r \
+                            Run-PerfTest.ps1 tools/ test-scenarios/ setup-telegraf/ \
+                            ${VM_USER}@${vmIp}:C:/sensor/sensor-perf-testing/
                     """
 
                     echo "Installing personalized sensor..."
@@ -348,6 +350,11 @@ print('Bootstrap complete.')
                     if (params.ONLY_SCENARIOS?.trim()) {
                         scenariosFlag = "-OnlyScenarios @(${params.ONLY_SCENARIOS.split(',').collect { "'${it.trim()}'" }.join(',')})"
                     }
+
+                    sh """
+                        sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} ${VM_USER}@${vmIp} \
+                            "powershell -Command \\"if (-not (Test-Path C:\\\\sensor\\\\sensor-perf-testing\\\\Run-PerfTest.ps1)) { Write-Host 'ERROR: Run-PerfTest.ps1 not found at C:\\\\sensor\\\\sensor-perf-testing'; Get-ChildItem C:\\\\sensor -Recurse -Name | Select-Object -First 40; exit 1 } else { Write-Host 'OK: Run-PerfTest.ps1 found' }\\""
+                    """
 
                     timeout(time: params.HEAVY_MODE ? 5 : 2, unit: 'HOURS') {
                         sh """
