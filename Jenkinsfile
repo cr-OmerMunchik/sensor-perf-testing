@@ -363,6 +363,7 @@ print('Bootstrap complete.')
             stage('Collect Reports') {
                 container('python') {
                     sh """
+                        rm -rf reports logs
                         mkdir -p reports logs
                         sshpass -p '${VM_PASS}' scp ${SSH_OPTS} -r ${VM_USER}@${vmIp}:C:/PerfTest/reports/* reports/ || true
                         sshpass -p '${VM_PASS}' scp ${SSH_OPTS} -r ${VM_USER}@${vmIp}:C:/PerfTest/logs/* logs/ || true
@@ -375,24 +376,24 @@ print('Bootstrap complete.')
                 archiveArtifacts artifacts: 'reports/**/*', allowEmptyArchive: true
                 archiveArtifacts artifacts: 'logs/**/*', allowEmptyArchive: true
 
-                def perfReports = findFiles(glob: 'reports/*perf*.html')
-                perfReports.each { f ->
+                def perfReports = findFiles(glob: 'reports/sensor-perf-report-*.html')
+                if (perfReports) {
                     publishHTML(target: [
-                        reportName: "Performance Report",
+                        reportName: "Sensor Perf Report",
                         reportDir: 'reports',
-                        reportFiles: f.name,
+                        reportFiles: perfReports.collect { it.name }.join(','),
                         keepAll: true,
                         alwaysLinkToLastBuild: true,
                         allowMissing: true
                     ])
                 }
 
-                def etlReports = findFiles(glob: 'reports/*etl*.html')
-                etlReports.each { f ->
+                def etlReports = findFiles(glob: 'reports/etl-cpu-hotspots-report-*.html')
+                if (etlReports) {
                     publishHTML(target: [
                         reportName: "ETL CPU Hotspots",
                         reportDir: 'reports',
-                        reportFiles: f.name,
+                        reportFiles: etlReports.collect { it.name }.join(','),
                         keepAll: true,
                         alwaysLinkToLastBuild: true,
                         allowMissing: true
