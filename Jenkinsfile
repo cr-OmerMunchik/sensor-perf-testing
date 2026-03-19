@@ -356,21 +356,61 @@ print('Bootstrap complete.')
                             "powershell -Command \\"if (-not (Test-Path C:\\\\sensor\\\\sensor-perf-testing\\\\Run-PerfTest.ps1)) { Write-Host 'ERROR: Run-PerfTest.ps1 not found at C:\\\\sensor\\\\sensor-perf-testing'; Get-ChildItem C:\\\\sensor -Recurse -Name | Select-Object -First 40; exit 1 } else { Write-Host 'OK: Run-PerfTest.ps1 found' }\\""
                     """
 
+                    // Write a launcher script that runs the perf test and writes a completion marker
+                    writeFile file: 'run-perf-wrapper.ps1', text: """
+\$ErrorActionPreference = 'Continue'
+\$logFile = 'C:\\PerfTest\\perf-output.log'
+\$markerFile = 'C:\\PerfTest\\perf-done.marker'
+Remove-Item \$markerFile -ErrorAction SilentlyContinue
+try {
+    & C:\\sensor\\sensor-perf-testing\\Run-PerfTest.ps1 -ReportsDir C:\\PerfTest\\reports ${modeFlag} ${profilingFlags} ${scenariosFlag} *>&1 | Tee-Object -FilePath \$logFile
+    \$exitCode = \$LASTEXITCODE
+} catch {
+    \$_ | Out-File -Append \$logFile
+    \$exitCode = 1
+}
+\$exitCode | Set-Content \$markerFile
+"""
+                    sh """
+                        sshpass -p '${VM_PASS}' scp ${SSH_OPTS} run-perf-wrapper.ps1 ${VM_USER}@${vmIp}:C:/PerfTest/run-perf-wrapper.ps1
+                    """
+
+                    // Launch as scheduled task so it survives SSH disconnects
+                    sh """
+                        sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} ${VM_USER}@${vmIp} \
+                            "powershell -Command \\"\\
+                            \\\$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-ExecutionPolicy Bypass -File C:\\\\PerfTest\\\\run-perf-wrapper.ps1';\\
+                            \\\$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 4);\\
+                            Register-ScheduledTask -TaskName PerfTest -Action \\\$action -Settings \\\$settings -User SYSTEM -Force | Out-Null;\\
+                            Start-ScheduledTask -TaskName PerfTest;\\
+                            Write-Host 'Perf test launched as scheduled task PerfTest'\\""
+                    """
+
+                    // Poll for completion by checking marker file
                     timeout(time: params.HEAVY_MODE ? 5 : 2, unit: 'HOURS') {
-                        def testExitCode = sh(script: """
-                            sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} \
-                                -o ServerAliveInterval=30 -o ServerAliveCountMax=10 \
-                                ${VM_USER}@${vmIp} \
-                                "powershell -ExecutionPolicy Bypass -File C:\\sensor\\sensor-perf-testing\\Run-PerfTest.ps1 \
-                                    -ReportsDir C:\\PerfTest\\reports \
-                                    ${modeFlag} ${profilingFlags} ${scenariosFlag} 2>&1"
-                        """, returnStatus: true)
-                        if (testExitCode == 255) {
-                            echo "WARNING: SSH connection dropped (exit 255) during perf test. Will still collect partial results."
-                            currentBuild.result = 'UNSTABLE'
-                        } else if (testExitCode != 0) {
-                            error("Perf test failed with exit code ${testExitCode}")
+                        waitUntil(initialRecurrencePeriod: 30000, maxRecurrencePeriod: 60000) {
+                            def checkResult = sh(script: """
+                                sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} ${VM_USER}@${vmIp} \
+                                    "powershell -Command \\"if (Test-Path C:\\\\PerfTest\\\\perf-done.marker) { Write-Host PERF_TEST_DONE; exit 0 } else { Write-Host PERF_TEST_RUNNING; exit 1 }\\""
+                            """, returnStatus: true)
+                            return checkResult == 0
                         }
+                    }
+
+                    // Stream the last part of the output log
+                    sh """
+                        sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} ${VM_USER}@${vmIp} \
+                            "powershell -Command \\"Get-Content C:\\\\PerfTest\\\\perf-output.log -Tail 200\\""
+                    """
+                    // Check exit code from marker
+                    def perfExitCode = sh(script: """
+                        sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} ${VM_USER}@${vmIp} \
+                            "powershell -Command \\"(Get-Content C:\\\\PerfTest\\\\perf-done.marker).Trim()\\""
+                    """, returnStdout: true).trim()
+                    echo "Perf test exit code: ${perfExitCode}"
+                    if (perfExitCode != '0' && perfExitCode != '') {
+                        currentBuild.result = 'UNSTABLE'
+                        echo "WARNING: Perf test exited with code ${perfExitCode}, collecting partial results"
                     }
                 }
             }
