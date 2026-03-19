@@ -76,7 +76,11 @@ podTemplate(
 
             stage('Download Sensor Artifacts') {
                 container('python') {
-                    sh "apt-get update -qq && apt-get install -y -qq sshpass openssh-client > /dev/null 2>&1"
+                    sh """
+                        apt-get update -qq && apt-get install -y -qq sshpass openssh-client osslsigncode > /dev/null 2>&1
+                        ln -sf \$(which openssl) /usr/local/bin/openssl 2>/dev/null || true
+                        ln -sf \$(which osslsigncode) /usr/local/bin/osslsigncode 2>/dev/null || true
+                    """
 
                     withCredentials([
                         usernamePassword(credentialsId: 'rejenkins-gcp',
@@ -172,7 +176,8 @@ for a in arts:
     "organization": "cybereason",
     "organizationId": "1002",
     "state": "ACTIVE_NORMAL",
-    "discoveryServerUrl": "${PHOENIX_DISCOVERY_URL}"
+    "discoveryServerUrl": "${PHOENIX_DISCOVERY_URL}",
+    "isOIDPersonalization": true
 }
 PJSON
                         mkdir -p sensor-artifacts/personalized
@@ -258,8 +263,8 @@ def run(cmd, desc):
 run('Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0', 'Install OpenSSH Server')
 run('Set-Service -Name sshd -StartupType Automatic', 'Set sshd to auto-start')
 run('Start-Service sshd', 'Start sshd')
-run('New-NetFirewallRule -Name sshd -DisplayName \"OpenSSH Server\" -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 -ErrorAction SilentlyContinue', 'Firewall rule')
-run('New-ItemProperty -Path \"HKLM:\\\\SOFTWARE\\\\OpenSSH\" -Name DefaultShell -Value \"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -PropertyType String -Force', 'Set PowerShell as default SSH shell')
+run("New-NetFirewallRule -Name sshd -DisplayName 'OpenSSH Server' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 -ErrorAction SilentlyContinue", 'Firewall rule')
+run("New-ItemProperty -Path 'HKLM:\\\\SOFTWARE\\\\OpenSSH' -Name DefaultShell -Value 'C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe' -PropertyType String -Force", 'Set PowerShell as default SSH shell')
 
 # Install .NET SDK 8
 run('winget install Microsoft.DotNet.SDK.8 --accept-package-agreements --accept-source-agreements --silent', 'Install .NET SDK 8')
