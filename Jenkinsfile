@@ -33,8 +33,8 @@ properties([
                      description: 'Run full workload suite (~3 hours). Default is light mode (~45 min).'),
         booleanParam(name: 'DESTROY_VM', defaultValue: true,
                      description: 'Destroy VM after test. Set to false to keep VM for debugging.'),
-        booleanParam(name: 'SKIP_BOOTSTRAP', defaultValue: false,
-                     description: 'Skip VM bootstrap (SSH, .NET, WPT install). Use when template already has them.'),
+        booleanParam(name: 'SKIP_BOOTSTRAP', defaultValue: true,
+                     description: 'Skip VM bootstrap (SSH, .NET, WPT install). Default template already has them.'),
         string(name: 'SENSOR_BUILD_URL', defaultValue: '',
                description: 'Override: full URL to sensor build. Leave empty to use latest integration build.'),
         string(name: 'ONLY_SCENARIOS', defaultValue: '',
@@ -118,12 +118,32 @@ for a in arts:
 
                         if (params.ENABLE_PROFILING) {
                             sh """
-                                echo "Downloading PDB archive (output-x64.zip)..."
-                                curl -sf -u "\${IRELEASE_USER}:\${IRELEASE_TOKEN}" \
-                                    "${buildApiUrl}/artifact/output-x64.zip" \
-                                    -o "sensor-artifacts/output-x64.zip" || {
-                                    echo "[WARN] output-x64.zip not found, profiling will have unresolved symbols"
-                                }
+                                echo "Looking for PDB archive..."
+                                PDB_ZIP=\$(curl -sf -u "\${IRELEASE_USER}:\${IRELEASE_TOKEN}" "${buildApiUrl}/api/json" | \
+                                    python3 -c "
+import sys, json
+arts = json.load(sys.stdin)['artifacts']
+for a in arts:
+    fn = a['fileName'].lower()
+    if fn.endswith('.zip') and ('output' in fn or 'pdb' in fn or 'symbol' in fn):
+        print(a['relativePath'])
+        break
+else:
+    # List all artifacts for debugging
+    print('NOT_FOUND', file=sys.stderr)
+    for a in arts:
+        print(f'  artifact: {a[\"fileName\"]} ({a[\"relativePath\"]})', file=sys.stderr)
+")
+                                if [ -n "\$PDB_ZIP" ]; then
+                                    echo "Downloading PDB archive: \$PDB_ZIP"
+                                    curl -sf -u "\${IRELEASE_USER}:\${IRELEASE_TOKEN}" \
+                                        "${buildApiUrl}/artifact/\${PDB_ZIP}" \
+                                        -o "sensor-artifacts/output-x64.zip" || {
+                                        echo "[WARN] PDB download failed, profiling will have unresolved symbols"
+                                    }
+                                else
+                                    echo "[WARN] No PDB archive found in build artifacts, profiling will have unresolved symbols"
+                                fi
                                 ls -lh sensor-artifacts/
                             """
                         }
