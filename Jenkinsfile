@@ -240,6 +240,7 @@ PJSON
                     sensorExeName = "CybereasonSensor64_personalized.exe"
                     sh "cp sensor-artifacts/personalized/${persExeName} sensor-artifacts/${sensorExeName}"
                     echo "Personalized sensor EXE: ${persExeName} -> ${sensorExeName}"
+                    env.SENSOR_VERSION = rawExeName.replaceAll('CybereasonSensor64_', '').replaceAll('.exe', '')
                     currentBuild.displayName = "#${currentBuild.number}:${persExeName.replaceAll('CybereasonSensor64_', '').replaceAll('.exe', '')}"
                 }
             }
@@ -522,13 +523,19 @@ try {
                     def cpuColor = (kpi.sPeakCpu < 10) ? '#2e7d32' : (kpi.sPeakCpu < 30) ? '#f57f17' : '#c62828'
                     def memColor = (kpi.memPeak < 300) ? '#2e7d32' : (kpi.memPeak < 500) ? '#f57f17' : '#c62828'
                     def scenColor = (kpi.completed == kpi.total) ? '#2e7d32' : '#c62828'
-                    currentBuild.description = """<b>Sensor CPU:</b> \
-<span style="color:${cpuColor}">avg ${kpi.sAvgCpu}%</span> / \
-<span style="color:${cpuColor}">peak ${kpi.sPeakCpu}%</span> &nbsp;|&nbsp; \
-<b>Sensor Mem:</b> \
-<span style="color:${memColor}">avg ${kpi.memAvg} MB</span> / \
-<span style="color:${memColor}">peak ${kpi.memPeak} MB</span> &nbsp;|&nbsp; \
-<b>Scenarios:</b> <span style="color:${scenColor}">${kpi.completed}/${kpi.total} passed</span>"""
+                    def version = env.SENSOR_VERSION ?: 'unknown'
+                    currentBuild.description = """\
+<div style="margin:4px 0;padding:8px 12px;border:1px solid #ddd;border-radius:6px;background:#f8f9fa;display:inline-block">\
+<b style="font-size:14px">Sensor Performance KPIs</b><br/>\
+<span style="color:#555">Version: ${version}</span><br/><br/>\
+<b>Sensor CPU:</b> \
+<span style="color:${cpuColor};font-weight:bold">avg ${kpi.sAvgCpu}%</span> / \
+<span style="color:${cpuColor};font-weight:bold">peak ${kpi.sPeakCpu}%</span><br/>\
+<b>Sensor Memory:</b> \
+<span style="color:${memColor};font-weight:bold">avg ${kpi.memAvg} MB</span> / \
+<span style="color:${memColor};font-weight:bold">peak ${kpi.memPeak} MB</span><br/>\
+<b>Scenarios:</b> <span style="color:${scenColor};font-weight:bold">${kpi.completed}/${kpi.total} passed</span>\
+</div>"""
                 } catch (Exception kpiErr) {
                     echo "Could not parse KPI JSON: ${kpiErr.message}"
                     currentBuild.description = currentBuild.displayName
@@ -578,8 +585,10 @@ try {
                     def buildUrl = env.BUILD_URL
                     def artifactLinks = "<${buildUrl}artifact/reports/|:bar_chart: Reports> | <${buildUrl}artifact/logs/|:page_facing_up: Logs> | <${buildUrl}console|:computer: Console>"
 
+                    def version = env.SENSOR_VERSION ?: 'unknown'
                     def msgBody = "${emoji} *Sensor Perf Nightly #${currentBuild.number}* - *${result}*\n" +
                                   "*Branch:* ${params.SENSOR_BRANCH ?: 'integration'}\n" +
+                                  "*Version:* ${version}\n" +
                                   "*Duration:* ${duration}\n"
                     if (kpiText) { msgBody += "\n${kpiText}\n" }
                     msgBody += "\n${artifactLinks}"
