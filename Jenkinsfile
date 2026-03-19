@@ -11,7 +11,6 @@ env.VAULT_URL = env.DEV_VAULT_ADDR
 env.VAULT_TOKEN = env.DEV_VAULT_TOKEN
 
 IRELEASE_BASE = 'https://jenkins-irelease.eng.cybereason.net:443'
-IRELEASE_JOB = 'msi-sensor-x64-release-build-integration'
 IRELEASE_PERSONALIZER_JOB = 'personalization-build-integration'
 
 PHOENIX_DISCOVERY_URL = 'https://sensor-discovery-service-dev-us-ashburn-1.cybereason.net'
@@ -35,8 +34,12 @@ properties([
                      description: 'Destroy VM after test. Set to false to keep VM for debugging.'),
         booleanParam(name: 'SKIP_BOOTSTRAP', defaultValue: true,
                      description: 'Skip VM bootstrap (SSH, .NET, WPT install). Default template already has them.'),
+        string(name: 'SENSOR_BRANCH', defaultValue: 'integration',
+               description: 'Sensor branch name (e.g. integration, 24.2, 26.1). Maps to iRelease job msi-sensor-x64-release-build-{branch}.'),
+        string(name: 'SENSOR_BUILD_NUMBER', defaultValue: '',
+               description: 'Specific build number from iRelease. Leave empty for latest successful build.'),
         string(name: 'SENSOR_BUILD_URL', defaultValue: '',
-               description: 'Override: full URL to sensor build. Leave empty to use latest integration build.'),
+               description: 'Full override URL to sensor build (ignores SENSOR_BRANCH/SENSOR_BUILD_NUMBER if set).'),
         string(name: 'ONLY_SCENARIOS', defaultValue: '',
                description: 'Comma-separated list of scenarios to run. Leave empty for all.'),
     ]),
@@ -68,7 +71,8 @@ podTemplate(
         String rawExeName = ''
         boolean isVmDeployed = false
 
-        currentBuild.displayName = "#${currentBuild.number}"
+        String branchLabel = params.SENSOR_BRANCH ?: 'integration'
+        currentBuild.displayName = "#${currentBuild.number} [${branchLabel}]"
 
         try {
             stage('Checkout') {
@@ -88,8 +92,12 @@ podTemplate(
                                          usernameVariable: 'IRELEASE_USER',
                                          passwordVariable: 'IRELEASE_TOKEN')
                     ]) {
-                        String buildApiUrl = params.SENSOR_BUILD_URL ?:
-                            "${IRELEASE_BASE}/job/${IRELEASE_JOB}/lastSuccessfulBuild"
+                        String ireleaseJob = "msi-sensor-x64-release-build-${params.SENSOR_BRANCH ?: 'integration'}"
+                        String buildSelector = params.SENSOR_BUILD_NUMBER?.trim() ?
+                            params.SENSOR_BUILD_NUMBER.trim() : 'lastSuccessfulBuild'
+                        String buildApiUrl = params.SENSOR_BUILD_URL?.trim() ?:
+                            "${IRELEASE_BASE}/job/${ireleaseJob}/${buildSelector}"
+                        echo "Sensor source: ${buildApiUrl}"
 
                         sh """
                             mkdir -p sensor-artifacts
