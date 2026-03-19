@@ -103,19 +103,32 @@ podTemplate(
                             mkdir -p sensor-artifacts
 
                             echo "Querying build info from: ${buildApiUrl}/api/json"
-                            BUILD_JSON=\$(curl -sf -u "\${IRELEASE_USER}:\${IRELEASE_TOKEN}" "${buildApiUrl}/api/json")
+                            BUILD_JSON=\$(curl -sf -u "\${IRELEASE_USER}:\${IRELEASE_TOKEN}" "${buildApiUrl}/api/json") || {
+                                echo "ERROR: Failed to query build at ${buildApiUrl}"
+                                echo "Check that the branch/build number exists on iRelease."
+                                exit 1
+                            }
                             BUILD_NUM=\$(echo "\$BUILD_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['number'])")
-                            echo "Build number: \$BUILD_NUM"
+                            BUILD_RESULT=\$(echo "\$BUILD_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('result','UNKNOWN'))")
+                            echo "Build number: \$BUILD_NUM  Result: \$BUILD_RESULT"
 
-                            # Find sensor EXE artifact
                             SENSOR_EXE=\$(echo "\$BUILD_JSON" | python3 -c "
 import sys, json
 arts = json.load(sys.stdin)['artifacts']
 for a in arts:
     if a['fileName'].startswith('CybereasonSensor64') and a['fileName'].endswith('.exe'):
-                                print(a['relativePath'])
-                                break
+        print(a['relativePath'])
+        break
+else:
+    print('', end='')
+    names = [a['fileName'] for a in arts]
+    print('Available artifacts: ' + ', '.join(names[:20]), file=sys.stderr)
 ")
+                            if [ -z "\$SENSOR_EXE" ]; then
+                                echo "ERROR: No CybereasonSensor64*.exe artifact found in build \$BUILD_NUM"
+                                echo "This build may have failed or have different artifacts."
+                                exit 1
+                            fi
                             echo "Downloading sensor: \$SENSOR_EXE"
                             curl -sf -u "\${IRELEASE_USER}:\${IRELEASE_TOKEN}" \
                                 "${buildApiUrl}/artifact/\${SENSOR_EXE}" \
