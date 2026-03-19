@@ -199,19 +199,28 @@ if ($PhoenixAuthKey) {
     $installArgs = "DISCOVERY_SERVER_URL=$DiscoveryServerUrl ORGANIZATION_ID=$OrganizationId PHOENIX_AUTH_INSTALLATION_KEY=$PhoenixAuthKey /quiet"
 }
 Write-Host "[INFO] Running: $SensorExePath $installArgs"
-Write-Host "[INFO] Checking prerequisites..."
-$vcRedists = Get-ChildItem "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" -ErrorAction SilentlyContinue
-if ($vcRedists) { Write-Host "[INFO] VC++ x64 runtime found" } else { Write-Host "[WARN] VC++ x64 runtime NOT found" }
-$netFx = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full" -ErrorAction SilentlyContinue
-if ($netFx) { Write-Host "[INFO] .NET Framework 4.x found (release $($netFx.Release))" } else { Write-Host "[WARN] .NET Framework 4.x NOT found" }
+
+Write-Host "[INFO] Checking Defender exclusions and AV state..."
+$defenderPrefs = Get-MpPreference -ErrorAction SilentlyContinue
+if ($defenderPrefs) {
+    Write-Host "[INFO] Adding Defender exclusions for sensor paths..."
+    Add-MpPreference -ExclusionPath "C:\Temp" -ErrorAction SilentlyContinue
+    Add-MpPreference -ExclusionPath "C:\Program Files\Cybereason" -ErrorAction SilentlyContinue
+    Add-MpPreference -ExclusionPath "C:\Program Files\Cybereason ActiveProbe" -ErrorAction SilentlyContinue
+    Add-MpPreference -ExclusionProcess $SensorExePath -ErrorAction SilentlyContinue
+    Set-MpPreference -SubmitSamplesConsent 2 -ErrorAction SilentlyContinue
+    Write-Host "[INFO] Defender exclusions added"
+}
+
+Write-Host "[INFO] Checking file signature..."
+$sig = Get-AuthenticodeSignature $SensorExePath -ErrorAction SilentlyContinue
+Write-Host "[INFO] Signature status: $($sig.Status), Signer: $($sig.SignerCertificate.Subject)"
 
 $wrapperScript = "C:\Temp\run_sensor_install.cmd"
 $logFile = "C:\Temp\sensor_install.log"
 $lines = @(
     "@echo off"
     "echo [%DATE% %TIME%] Starting sensor install >> `"$logFile`""
-    "echo [%DATE% %TIME%] EXE: $SensorExePath >> `"$logFile`""
-    "echo [%DATE% %TIME%] Args: $installArgs >> `"$logFile`""
     "dir `"$SensorExePath`" >> `"$logFile`" 2>&1"
     "`"$SensorExePath`" $installArgs >> `"$logFile`" 2>&1"
     "set EC=%ERRORLEVEL%"
@@ -266,11 +275,22 @@ if (Test-Path "C:\Temp\sensor_msi.log") {
     Write-Host "[INFO] No MSI log found at C:\Temp\sensor_msi.log -- MSI may not have been extracted"
 }
 
-Write-Host "[INFO] TEMP folder contents after install:"
-Get-ChildItem $env:TEMP -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt (Get-Date).AddMinutes(-5) } |
-    Format-Table Name, Length, LastWriteTime -AutoSize
-Get-ChildItem "C:\Windows\Temp" -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt (Get-Date).AddMinutes(-5) } |
-    Format-Table Name, Length, LastWriteTime -AutoSize
+Write-Host "[INFO] Checking for Cybereason bootstrapper logs in C:\Windows\Temp..."
+$bsLogs = Get-ChildItem "C:\Windows\Temp\Cybereason_Sensor_*.log" -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending
+if ($bsLogs) {
+    $latestBsLog = $bsLogs[0]
+    Write-Host "[INFO] Found bootstrapper log: $($latestBsLog.Name) ($($latestBsLog.Length) bytes)"
+    Write-Host "=== BOOTSTRAPPER LOG (last 200 lines) ==="
+    Get-Content $latestBsLog.FullName -Tail 200 | ForEach-Object { Write-Host "  $_" }
+    Write-Host "=== END BOOTSTRAPPER LOG ==="
+}
+$bsJson = Get-ChildItem "C:\Windows\Temp\Cybereason_Sensor_*.json" -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending
+if ($bsJson) {
+    Write-Host "[INFO] Bootstrapper JSON: $($bsJson[0].Name)"
+    Get-Content $bsJson[0].FullName | ForEach-Object { Write-Host "  $_" }
+}
 
 if ($lastResult -ne 0) {
     Write-Host "[WARN] Sensor installer returned exit code $lastResult -- waiting for services anyway" -ForegroundColor Yellow
