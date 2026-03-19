@@ -21,7 +21,7 @@ PHOENIX_AUTH_KEY = '3KZGZN5R1ZWY06NFGSD5XBFBSMJ4N5FQT8Q6V44XZ1EDNVF4BD2'
 
 VM_USER = 'bbtest'
 VM_PASS = 'Password1'
-SSH_OPTS = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR'
+SSH_OPTS = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o TCPKeepAlive=yes'
 
 properties([
     parameters([
@@ -357,12 +357,20 @@ print('Bootstrap complete.')
                     """
 
                     timeout(time: params.HEAVY_MODE ? 5 : 2, unit: 'HOURS') {
-                        sh """
-                            sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} -o ServerAliveInterval=60 ${VM_USER}@${vmIp} \
+                        def testExitCode = sh(script: """
+                            sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} \
+                                -o ServerAliveInterval=30 -o ServerAliveCountMax=10 \
+                                ${VM_USER}@${vmIp} \
                                 "powershell -ExecutionPolicy Bypass -File C:\\sensor\\sensor-perf-testing\\Run-PerfTest.ps1 \
                                     -ReportsDir C:\\PerfTest\\reports \
                                     ${modeFlag} ${profilingFlags} ${scenariosFlag} 2>&1"
-                        """
+                        """, returnStatus: true)
+                        if (testExitCode == 255) {
+                            echo "WARNING: SSH connection dropped (exit 255) during perf test. Will still collect partial results."
+                            currentBuild.result = 'UNSTABLE'
+                        } else if (testExitCode != 0) {
+                            error("Perf test failed with exit code ${testExitCode}")
+                        }
                     }
                 }
             }
