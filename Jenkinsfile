@@ -470,18 +470,18 @@ try {
                             \\\$jsons = @(Get-ChildItem C:\\\\PerfTest\\\\results\\\\*.json -ErrorAction SilentlyContinue | ForEach-Object { Get-Content \\\$_ -Raw | ConvertFrom-Json });\\
                             if (\\\$jsons.Count -eq 0) { Write-Host '{}'; exit 0 };\\
                             \\\$total = \\\$jsons.Count;\\
-                            \\\$completed = (\\\$jsons | Where-Object { \\\$_.duration_seconds -gt 0 }).Count;\\
-                            \\\$sAvgCpus = \\\$jsons | Where-Object { \\\$_.total_sensor_avg_cpu_percent } | ForEach-Object { [double]\\\$_.total_sensor_avg_cpu_percent };\\
+                            \\\$completed = @(\\\$jsons | Where-Object { \\\$_.duration_seconds -gt 0 }).Count;\\
+                            \\\$sAvgCpus = @(\\\$jsons | Where-Object { \\\$_.total_sensor_avg_cpu_percent } | ForEach-Object { [double]\\\$_.total_sensor_avg_cpu_percent });\\
                             \\\$sAvgCpu = if (\\\$sAvgCpus) { [math]::Round((\\\$sAvgCpus | Measure-Object -Average).Average, 1) } else { -1 };\\
                             \\\$sPeakCpu = if (\\\$sAvgCpus) { [math]::Round((\\\$sAvgCpus | Measure-Object -Maximum).Maximum, 1) } else { -1 };\\
-                            \\\$memAvgs = \\\$jsons | Where-Object { \\\$_.process_metrics } | ForEach-Object {\\
+                            \\\$memAvgs = @(\\\$jsons | Where-Object { \\\$_.process_metrics } | ForEach-Object {\\
                                 \\\$sum = 0; \\\$_.process_metrics.PSObject.Properties | ForEach-Object { \\\$sum += [double]\\\$_.Value.avg_memory_mb };\\
                                 \\\$sum\\
-                            };\\
-                            \\\$memPeaks = \\\$jsons | Where-Object { \\\$_.process_metrics } | ForEach-Object {\\
+                            });\\
+                            \\\$memPeaks = @(\\\$jsons | Where-Object { \\\$_.process_metrics } | ForEach-Object {\\
                                 \\\$sum = 0; \\\$_.process_metrics.PSObject.Properties | ForEach-Object { \\\$sum += [double]\\\$_.Value.peak_memory_mb };\\
                                 \\\$sum\\
-                            };\\
+                            });\\
                             \\\$memAvg = if (\\\$memAvgs) { [math]::Round((\\\$memAvgs | Measure-Object -Average).Average, 0) } else { -1 };\\
                             \\\$memPeak = if (\\\$memPeaks) { [math]::Round((\\\$memPeaks | Measure-Object -Maximum).Maximum, 0) } else { -1 };\\
                             Write-Host ('{' + [char]34 + 'sAvgCpu' + [char]34 + ':' + \\\$sAvgCpu + ',' + [char]34 + 'sPeakCpu' + [char]34 + ':' + \\\$sPeakCpu + ',' + [char]34 + 'memAvg' + [char]34 + ':' + \\\$memAvg + ',' + [char]34 + 'memPeak' + [char]34 + ':' + \\\$memPeak + ',' + [char]34 + 'completed' + [char]34 + ':' + \\\$completed + ',' + [char]34 + 'total' + [char]34 + ':' + \\\$total + '}')\\""
