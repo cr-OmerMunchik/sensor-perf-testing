@@ -462,6 +462,31 @@ try {
                         ls -lh reports/ || true
                         ls -lh logs/ || true
                     """
+
+                    // Extract KPIs from scenario result JSONs on the VM
+                    env.PERF_KPI_JSON = sh(script: """
+                        sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} ${VM_USER}@${vmIp} \
+                            "powershell -Command \\"\\
+                            \\\$jsons = @(Get-ChildItem C:\\\\PerfTest\\\\results\\\\*.json -ErrorAction SilentlyContinue | ForEach-Object { Get-Content \\\$_ -Raw | ConvertFrom-Json });\\
+                            if (\\\$jsons.Count -eq 0) { Write-Host '{}'; exit 0 };\\
+                            \\\$total = \\\$jsons.Count;\\
+                            \\\$completed = (\\\$jsons | Where-Object { \\\$_.duration_seconds -gt 0 }).Count;\\
+                            \\\$sAvgCpus = \\\$jsons | Where-Object { \\\$_.total_sensor_avg_cpu_percent } | ForEach-Object { [double]\\\$_.total_sensor_avg_cpu_percent };\\
+                            \\\$sAvgCpu = if (\\\$sAvgCpus) { [math]::Round((\\\$sAvgCpus | Measure-Object -Average).Average, 1) } else { -1 };\\
+                            \\\$sPeakCpu = if (\\\$sAvgCpus) { [math]::Round((\\\$sAvgCpus | Measure-Object -Maximum).Maximum, 1) } else { -1 };\\
+                            \\\$memAvgs = \\\$jsons | Where-Object { \\\$_.process_metrics } | ForEach-Object {\\
+                                \\\$sum = 0; \\\$_.process_metrics.PSObject.Properties | ForEach-Object { \\\$sum += [double]\\\$_.Value.avg_memory_mb };\\
+                                \\\$sum\\
+                            };\\
+                            \\\$memPeaks = \\\$jsons | Where-Object { \\\$_.process_metrics } | ForEach-Object {\\
+                                \\\$sum = 0; \\\$_.process_metrics.PSObject.Properties | ForEach-Object { \\\$sum += [double]\\\$_.Value.peak_memory_mb };\\
+                                \\\$sum\\
+                            };\\
+                            \\\$memAvg = if (\\\$memAvgs) { [math]::Round((\\\$memAvgs | Measure-Object -Average).Average, 0) } else { -1 };\\
+                            \\\$memPeak = if (\\\$memPeaks) { [math]::Round((\\\$memPeaks | Measure-Object -Maximum).Maximum, 0) } else { -1 };\\
+                            Write-Host ('{' + [char]34 + 'sAvgCpu' + [char]34 + ':' + \\\$sAvgCpu + ',' + [char]34 + 'sPeakCpu' + [char]34 + ':' + \\\$sPeakCpu + ',' + [char]34 + 'memAvg' + [char]34 + ':' + \\\$memAvg + ',' + [char]34 + 'memPeak' + [char]34 + ':' + \\\$memPeak + ',' + [char]34 + 'completed' + [char]34 + ':' + \\\$completed + ',' + [char]34 + 'total' + [char]34 + ':' + \\\$total + '}')\\""
+                    """, returnStdout: true).trim()
+                    echo "KPI JSON: ${env.PERF_KPI_JSON}"
                 }
 
                 archiveArtifacts artifacts: 'reports/**/*', allowEmptyArchive: true
@@ -490,6 +515,24 @@ try {
                         allowMissing: true
                     ])
                 }
+
+                // Set colored KPIs on build page
+                try {
+                    def kpi = readJSON text: env.PERF_KPI_JSON
+                    def cpuColor = (kpi.sPeakCpu < 10) ? '#2e7d32' : (kpi.sPeakCpu < 30) ? '#f57f17' : '#c62828'
+                    def memColor = (kpi.memPeak < 300) ? '#2e7d32' : (kpi.memPeak < 500) ? '#f57f17' : '#c62828'
+                    def scenColor = (kpi.completed == kpi.total) ? '#2e7d32' : '#c62828'
+                    currentBuild.description = """<b>Sensor CPU:</b> \
+<span style="color:${cpuColor}">avg ${kpi.sAvgCpu}%</span> / \
+<span style="color:${cpuColor}">peak ${kpi.sPeakCpu}%</span> &nbsp;|&nbsp; \
+<b>Sensor Mem:</b> \
+<span style="color:${memColor}">avg ${kpi.memAvg} MB</span> / \
+<span style="color:${memColor}">peak ${kpi.memPeak} MB</span> &nbsp;|&nbsp; \
+<b>Scenarios:</b> <span style="color:${scenColor}">${kpi.completed}/${kpi.total} passed</span>"""
+                } catch (Exception kpiErr) {
+                    echo "Could not parse KPI JSON: ${kpiErr.message}"
+                    currentBuild.description = currentBuild.displayName
+                }
             }
 
         } catch (Exception e) {
@@ -512,6 +555,40 @@ try {
                 } else if (!params.DESTROY_VM) {
                     echo "VM kept alive for debugging: ${vmIp} (env: ${envName})"
                     echo "Destroy manually: vms-destroy with organization=${envName}"
+                }
+            }
+
+            stage('Notify') {
+                catchError(buildResult: null, stageResult: 'UNSTABLE') {
+                    def result = currentBuild.currentResult ?: 'SUCCESS'
+                    def emoji = (result == 'SUCCESS') ? ':white_check_mark:' : (result == 'UNSTABLE') ? ':warning:' : ':x:'
+                    def color = (result == 'SUCCESS') ? '#36a64f' : (result == 'UNSTABLE') ? '#daa520' : '#d00000'
+                    def duration = currentBuild.durationString?.replaceAll(' and counting', '') ?: 'unknown'
+
+                    def kpiText = ''
+                    try {
+                        def kpi = readJSON text: (env.PERF_KPI_JSON ?: '{}')
+                        if (kpi.sAvgCpu != null && kpi.sAvgCpu >= 0) {
+                            kpiText = "*Sensor CPU:* avg ${kpi.sAvgCpu}% / peak ${kpi.sPeakCpu}%\n" +
+                                      "*Sensor Memory:* avg ${kpi.memAvg} MB / peak ${kpi.memPeak} MB\n" +
+                                      "*Scenarios:* ${kpi.completed}/${kpi.total} passed"
+                        }
+                    } catch (ignored) {}
+
+                    def buildUrl = env.BUILD_URL
+                    def artifactLinks = "<${buildUrl}artifact/reports/|:bar_chart: Reports> | <${buildUrl}artifact/logs/|:page_facing_up: Logs> | <${buildUrl}console|:computer: Console>"
+
+                    def msgBody = "${emoji} *Sensor Perf Nightly #${currentBuild.number}* - *${result}*\n" +
+                                  "*Branch:* ${params.SENSOR_BRANCH ?: 'integration'}\n" +
+                                  "*Duration:* ${duration}\n"
+                    if (kpiText) { msgBody += "\n${kpiText}\n" }
+                    msgBody += "\n${artifactLinks}"
+
+                    slackSend(
+                        color: color,
+                        message: msgBody,
+                        channel: '@omer.munchik'
+                    )
                 }
             }
         }
