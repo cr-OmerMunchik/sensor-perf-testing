@@ -173,15 +173,31 @@ if ($existingProcs) {
     Start-Sleep -Seconds 10
 }
 
-$installArgs = "/quiet /l*v C:\Temp\sensor_msi.log"
+$installArgs = "/quiet"
 if ($PhoenixAuthKey) {
-    $installArgs = "DISCOVERY_SERVER_URL=$DiscoveryServerUrl ORGANIZATION_ID=$OrganizationId PHOENIX_AUTH_INSTALLATION_KEY=$PhoenixAuthKey /quiet /l*v C:\Temp\sensor_msi.log"
+    $installArgs = "DISCOVERY_SERVER_URL=$DiscoveryServerUrl ORGANIZATION_ID=$OrganizationId PHOENIX_AUTH_INSTALLATION_KEY=$PhoenixAuthKey /quiet"
 }
 Write-Host "[INFO] Running: $SensorExePath $installArgs"
+Write-Host "[INFO] Checking prerequisites..."
+$vcRedists = Get-ChildItem "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" -ErrorAction SilentlyContinue
+if ($vcRedists) { Write-Host "[INFO] VC++ x64 runtime found" } else { Write-Host "[WARN] VC++ x64 runtime NOT found" }
+$netFx = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full" -ErrorAction SilentlyContinue
+if ($netFx) { Write-Host "[INFO] .NET Framework 4.x found (release $($netFx.Release))" } else { Write-Host "[WARN] .NET Framework 4.x NOT found" }
 
 $wrapperScript = "C:\Temp\run_sensor_install.cmd"
 $logFile = "C:\Temp\sensor_install.log"
-Set-Content -Path $wrapperScript -Value "@echo off`r`n`"$SensorExePath`" $installArgs > `"$logFile`" 2>&1`r`necho EXIT_CODE=%ERRORLEVEL% >> `"$logFile`""
+$lines = @(
+    "@echo off"
+    "echo [%DATE% %TIME%] Starting sensor install >> `"$logFile`""
+    "echo [%DATE% %TIME%] EXE: $SensorExePath >> `"$logFile`""
+    "echo [%DATE% %TIME%] Args: $installArgs >> `"$logFile`""
+    "dir `"$SensorExePath`" >> `"$logFile`" 2>&1"
+    "`"$SensorExePath`" $installArgs >> `"$logFile`" 2>&1"
+    "set EC=%ERRORLEVEL%"
+    "echo [%DATE% %TIME%] EXIT_CODE=%EC% >> `"$logFile`""
+    "echo EXIT_CODE=%EC%"
+)
+Set-Content -Path $wrapperScript -Value ($lines -join "`r`n")
 
 $taskName = "SensorInstall_$(Get-Random)"
 $action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$wrapperScript`""
