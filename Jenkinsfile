@@ -526,8 +526,7 @@ try {
                     def version = env.SENSOR_VERSION ?: 'unknown'
                     currentBuild.description = """\
 <div style="margin:4px 0;padding:8px 12px;border:1px solid #ddd;border-radius:6px;background:#f8f9fa;display:inline-block">\
-<b style="font-size:14px">Sensor Performance KPIs</b><br/>\
-<span style="color:#555">Version: ${version}</span><br/><br/>\
+<b>Version:</b> <span style="color:#555">${version}</span><br/>\
 <b>Sensor CPU:</b> \
 <span style="color:${cpuColor};font-weight:bold">avg ${kpi.sAvgCpu}%</span> / \
 <span style="color:${cpuColor};font-weight:bold">peak ${kpi.sPeakCpu}%</span><br/>\
@@ -596,7 +595,7 @@ try {
                     slackSend(
                         color: color,
                         message: msgBody,
-                        channel: '@omer.munchik'
+                        channel: '#pheonix-agent-performance'
                     )
                 }
             }
