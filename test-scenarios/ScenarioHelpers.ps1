@@ -308,17 +308,14 @@ function Complete-Scenario {
                 $cpu = $processMetrics[$pn].cpuValues
                 $mem = $processMetrics[$pn].memValues
                 $restarts = if ($processPids.ContainsKey($pn)) { [math]::Max(0, $processPids[$pn].Count - 1) } else { 0 }
-                $lastSample = $validSamples[-1]
-                $uptimeMin = -1
-                if ($lastSample.processes -and $lastSample.processes[$pn] -and $lastSample.processes[$pn].uptimeMin -ge 0) {
-                    $uptimeMin = $lastSample.processes[$pn].uptimeMin
-                }
+                $samplesPresent = $cpu.Count
+                $uptimePct = if ($sampleCount -gt 0) { [math]::Round(($samplesPresent / $sampleCount) * 100, 1) } else { -1 }
                 $procSummaries[$pn] = @{
                     avg_cpu_percent  = [math]::Round(($cpu | Measure-Object -Average).Average, 2)
                     peak_cpu_percent = [math]::Round(($cpu | Measure-Object -Maximum).Maximum, 2)
                     avg_memory_mb    = [math]::Round(($mem | Measure-Object -Average).Average, 1)
                     peak_memory_mb   = [math]::Round(($mem | Measure-Object -Maximum).Maximum, 1)
-                    uptime_minutes   = $uptimeMin
+                    uptime_pct       = $uptimePct
                     restarts         = $restarts
                 }
             }

@@ -1421,19 +1421,14 @@ $($script:SharedCss)
 
         # ── Sensor Process Uptime & DB Size ──
         $hasUptimeOrDb = @($scenarioResults | Where-Object { $_.sensor_db_size_mb -or ($_.process_metrics -and (
-            ($_.process_metrics -is [PSCustomObject] -and ($_.process_metrics.PSObject.Properties | Where-Object { $_.Value.uptime_minutes -ge 0 })) -or
-            ($_.process_metrics -is [hashtable] -and ($_.process_metrics.Values | Where-Object { $_.uptime_minutes -ge 0 }))
+            ($_.process_metrics -is [PSCustomObject] -and ($_.process_metrics.PSObject.Properties | Where-Object { $_.Value.uptime_pct -ge 0 -or $_.Value.uptime_minutes -ge 0 })) -or
+            ($_.process_metrics -is [hashtable] -and ($_.process_metrics.Values | Where-Object { $_.uptime_pct -ge 0 -or $_.uptime_minutes -ge 0 }))
         )) }).Count -gt 0
         if ($hasUptimeOrDb) {
             [void]$sb.AppendLine("<h2>Sensor Process Uptime &amp; DB Size</h2>")
             [void]$sb.AppendLine(@"
-<div class="callout"><strong>What this shows:</strong> Process uptime as percentage of the total test suite duration, and correlation DB size at each scenario. Process restarts during a scenario indicate stability issues.</div>
+<div class="callout"><strong>What this shows:</strong> Percentage of metric samples during each scenario where the process was detected running. 100% means the process was present at every sample. Process restarts during a scenario indicate stability issues.</div>
 "@)
-            # Compute total suite duration in minutes for uptime %
-            $suiteDurMin = 0
-            if ($firstStart -and $lastEnd) {
-                $suiteDurMin = ([datetime]$lastEnd - [datetime]$firstStart).TotalMinutes
-            }
 
             $mainProcs = @("minionhost", "ActiveConsole")
             [void]$sb.AppendLine("<table><tr><th>Scenario</th>")
@@ -1446,15 +1441,17 @@ $($script:SharedCss)
                     $procData = $null
                     if ($pm -is [PSCustomObject] -and $pm.PSObject.Properties[$mp]) { $procData = $pm.$mp }
                     elseif ($pm -is [hashtable] -and $pm.ContainsKey($mp)) { $procData = $pm[$mp] }
-                    if ($procData -and $procData.uptime_minutes -ge 0) {
-                        $uMin = [double]$procData.uptime_minutes
-                        if ($suiteDurMin -gt 0) {
-                            $uptimePct = [math]::Round(($uMin / $suiteDurMin) * 100, 0)
-                            $uptimePct = [math]::Min($uptimePct, 100)
-                            [void]$sb.AppendLine("<td class=`"numeric`">${uptimePct}%</td>")
-                        } else {
-                            [void]$sb.AppendLine("<td class=`"numeric`">-</td>")
-                        }
+                    $hasPct = $procData -and $procData.PSObject -and $procData.PSObject.Properties['uptime_pct']
+                    if (-not $hasPct -and $procData -is [hashtable]) { $hasPct = $procData.ContainsKey('uptime_pct') }
+                    if ($hasPct -and [double]$procData.uptime_pct -ge 0) {
+                        $uptimePct = [math]::Round([double]$procData.uptime_pct, 0)
+                        $uptimeColor = if ($uptimePct -ge 100) { "#27ae60" } elseif ($uptimePct -ge 90) { "#f39c12" } else { "#e74c3c" }
+                        [void]$sb.AppendLine("<td class=`"numeric`" style=`"color:$uptimeColor; font-weight:bold;`">${uptimePct}%</td>")
+                        $restartCount = if ($procData.restarts) { [int]$procData.restarts } else { 0 }
+                        $restartColor = if ($restartCount -gt 0) { "color:#e74c3c; font-weight:bold;" } else { "" }
+                        [void]$sb.AppendLine("<td class=`"numeric`" style=`"$restartColor`">$restartCount</td>")
+                    } elseif ($procData -and $procData.uptime_minutes -ge 0) {
+                        [void]$sb.AppendLine("<td class=`"numeric`">-</td>")
                         $restartCount = if ($procData.restarts) { [int]$procData.restarts } else { 0 }
                         $restartColor = if ($restartCount -gt 0) { "color:#e74c3c; font-weight:bold;" } else { "" }
                         [void]$sb.AppendLine("<td class=`"numeric`" style=`"$restartColor`">$restartCount</td>")

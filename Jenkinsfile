@@ -42,8 +42,10 @@ properties([
                description: 'Full override URL to sensor build (ignores SENSOR_BRANCH/SENSOR_BUILD_NUMBER if set).'),
         string(name: 'ONLY_SCENARIOS', defaultValue: '',
                description: 'Comma-separated list of scenarios to run. Leave empty for all.'),
+        choice(name: 'VM_SIZE', choices: ['SMALL', 'LARGE'],
+               description: 'VM size (SMALL=2vCPU/4GB, LARGE=4vCPU/8GB). Use SMALL for standard perf testing.'),
     ]),
-    pipelineTriggers([cron('H 0 * * *')])
+    pipelineTriggers([cron('H */3 * * *')])
 ])
 
 def label = "perf-nightly-${UUID.randomUUID().toString().substring(0,8)}"
@@ -79,6 +81,58 @@ podTemplate(
                 checkout scm
             }
 
+            stage('Check for New Build') {
+                def isTimerTrigger = currentBuild.getBuildCauses('hudson.triggers.TimerTrigger$TimerTriggerCause').size() > 0
+                if (!isTimerTrigger) {
+                    echo "Manual/API trigger -- skipping new-build check, proceeding with test."
+                } else {
+                    container('python') {
+                        withCredentials([
+                            usernamePassword(credentialsId: 'rejenkins-gcp',
+                                             usernameVariable: 'IRELEASE_USER',
+                                             passwordVariable: 'IRELEASE_TOKEN')
+                        ]) {
+                            String ireleaseJob = "msi-sensor-x64-release-build-${params.SENSOR_BRANCH ?: 'integration'}"
+                            env.LATEST_IRELEASE_BUILD = sh(script: """
+                                curl -sf -u "\${IRELEASE_USER}:\${IRELEASE_TOKEN}" \
+                                    "${IRELEASE_BASE}/job/${ireleaseJob}/lastSuccessfulBuild/api/json" \
+                                    | python3 -c "import sys,json; print(json.load(sys.stdin)['number'])"
+                            """, returnStdout: true).trim()
+                            echo "Latest successful iRelease build: ${env.LATEST_IRELEASE_BUILD}"
+                        }
+                    }
+
+                    String lastTestedBuild = ''
+                    try {
+                        def prevBuild = currentBuild.previousBuild
+                        while (prevBuild != null) {
+                            def desc = prevBuild.description ?: ''
+                            def matcher = (desc =~ /iRelease#(\d+)/)
+                            if (matcher.find()) {
+                                lastTestedBuild = matcher.group(1)
+                                break
+                            }
+                            prevBuild = prevBuild.previousBuild
+                        }
+                    } catch (ignored) {}
+                    echo "Last tested iRelease build: ${lastTestedBuild ?: 'none'}"
+
+                    if (env.LATEST_IRELEASE_BUILD && env.LATEST_IRELEASE_BUILD == lastTestedBuild) {
+                        echo "No new integration build since last run (iRelease #${env.LATEST_IRELEASE_BUILD}). Skipping."
+                        currentBuild.result = 'NOT_BUILT'
+                        currentBuild.description = "Skipped - no new build (iRelease#${env.LATEST_IRELEASE_BUILD})"
+                    } else {
+                        echo "New build detected: iRelease #${env.LATEST_IRELEASE_BUILD} (last tested: ${lastTestedBuild ?: 'none'}). Proceeding."
+                        env.IRELEASE_BUILD_NUM = env.LATEST_IRELEASE_BUILD
+                    }
+                }
+            }
+
+            if (currentBuild.result == 'NOT_BUILT') {
+                echo "Pipeline skipped -- no new build to test."
+                return
+            }
+
             stage('Download Sensor Artifacts') {
                 container('python') {
                     sh """
@@ -111,6 +165,7 @@ podTemplate(
                             BUILD_NUM=\$(echo "\$BUILD_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['number'])")
                             BUILD_RESULT=\$(echo "\$BUILD_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('result','UNKNOWN'))")
                             echo "Build number: \$BUILD_NUM  Result: \$BUILD_RESULT"
+                            echo "\$BUILD_NUM" > build_num.txt
 
                             SENSOR_EXE=\$(echo "\$BUILD_JSON" | python3 -c "
 import sys, json
@@ -174,6 +229,10 @@ else:
                         "ls sensor-artifacts/CybereasonSensor64*.exe | head -1 | xargs basename"
                     ).trim()
                     echo "Raw sensor EXE: ${rawExeName}"
+
+                    if (!env.IRELEASE_BUILD_NUM) {
+                        env.IRELEASE_BUILD_NUM = sh(returnStdout: true, script: "cat build_num.txt 2>/dev/null || echo ''").trim()
+                    }
 
                     withCredentials([
                         usernamePassword(credentialsId: 'rejenkins-gcp',
@@ -255,7 +314,7 @@ PJSON
                         .squad("Performance.Infra")
                         .template(params.VM_TEMPLATE)
                         .vc("ORACLE")
-                        .vmSize(VmSizeType.LARGE)
+                        .vmSize(params.VM_SIZE == 'LARGE' ? VmSizeType.LARGE : VmSizeType.SMALL)
                         .count(1)
                         .build()
 
@@ -534,10 +593,10 @@ try {
 <span style="color:${memColor};font-weight:bold">avg ${kpi.memAvg} MB</span> / \
 <span style="color:${memColor};font-weight:bold">peak ${kpi.memPeak} MB</span><br/>\
 <b>Scenarios:</b> <span style="color:${scenColor};font-weight:bold">${kpi.completed}/${kpi.total} passed</span>\
-</div>"""
+</div><!-- iRelease#${env.IRELEASE_BUILD_NUM ?: ''} -->"""
                 } catch (Exception kpiErr) {
                     echo "Could not parse KPI JSON: ${kpiErr.message}"
-                    currentBuild.description = currentBuild.displayName
+                    currentBuild.description = "${currentBuild.displayName}<!-- iRelease#${env.IRELEASE_BUILD_NUM ?: ''} -->"
                 }
             }
 
@@ -565,6 +624,11 @@ try {
             }
 
             stage('Notify') {
+                if (currentBuild.result == 'NOT_BUILT') {
+                    echo "Build skipped -- no notification sent."
+                    org.jenkinsci.plugins.pipeline.modeldefinition.Utils.markStageSkippedForConditional(STAGE_NAME)
+                    return
+                }
                 catchError(buildResult: null, stageResult: 'UNSTABLE') {
                     def result = currentBuild.currentResult ?: 'SUCCESS'
                     def emoji = (result == 'SUCCESS') ? ':white_check_mark:' : (result == 'UNSTABLE') ? ':warning:' : ':x:'
@@ -592,10 +656,21 @@ try {
                     if (kpiText) { msgBody += "\n${kpiText}\n" }
                     msgBody += "\n${artifactLinks}"
 
+                    def isTimerTrigger = currentBuild.getBuildCauses('hudson.triggers.TimerTrigger$TimerTriggerCause').size() > 0
+                    def userCause = currentBuild.getBuildCauses('hudson.model.Cause$UserIdCause')
+                    def slackChannel
+                    if (isTimerTrigger) {
+                        slackChannel = '#pheonix-agent-performance'
+                    } else if (userCause.size() > 0) {
+                        slackChannel = "@${userCause[0].userId}"
+                    } else {
+                        slackChannel = '@omer.munchik'
+                    }
+
                     slackSend(
                         color: color,
                         message: msgBody,
-                        channel: '#pheonix-agent-performance'
+                        channel: slackChannel
                     )
                 }
             }
