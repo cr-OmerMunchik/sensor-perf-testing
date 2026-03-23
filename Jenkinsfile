@@ -480,7 +480,7 @@ try {
                     """
 
                     // Poll for completion by checking marker file
-                    timeout(time: params.HEAVY_MODE ? 5 : 3, unit: 'HOURS') {
+                    timeout(time: params.HEAVY_MODE ? 8 : 3, unit: 'HOURS') {
                         waitUntil(initialRecurrencePeriod: 30000, maxRecurrencePeriod: 60000) {
                             def checkResult = sh(script: """
                                 sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} ${VM_USER}@${vmIp} \
