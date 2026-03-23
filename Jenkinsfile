@@ -42,10 +42,10 @@ properties([
                description: 'Full override URL to sensor build (ignores SENSOR_BRANCH/SENSOR_BUILD_NUMBER if set).'),
         string(name: 'ONLY_SCENARIOS', defaultValue: '',
                description: 'Comma-separated list of scenarios to run. Leave empty for all.'),
-        choice(name: 'VM_SIZE', choices: ['SMALL', 'LARGE'],
-               description: 'VM size (SMALL=2vCPU/4GB, LARGE=4vCPU/8GB). Use SMALL for standard perf testing.'),
+        choice(name: 'VM_SIZE', choices: ['LARGE', 'MEDIUM', 'SMALL'],
+               description: 'VM size: SMALL=2vCPU/4GB, MEDIUM=4vCPU/8GB, LARGE=8vCPU/16GB.'),
     ]),
-    pipelineTriggers([cron('H */3 * * *')])
+    pipelineTriggers([cron('H 0 * * *')])
 ])
 
 def label = "perf-nightly-${UUID.randomUUID().toString().substring(0,8)}"
@@ -314,7 +314,7 @@ PJSON
                         .squad("Performance.Infra")
                         .template(params.VM_TEMPLATE)
                         .vc("ORACLE")
-                        .vmSize(params.VM_SIZE == 'LARGE' ? VmSizeType.LARGE : VmSizeType.SMALL)
+                        .vmSize(params.VM_SIZE == 'LARGE' ? VmSizeType.LARGE : params.VM_SIZE == 'MEDIUM' ? VmSizeType.MEDIUM : VmSizeType.SMALL)
                         .count(1)
                         .build()
 

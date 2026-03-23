@@ -1497,16 +1497,15 @@ $($script:SharedCss)
     }
 
     # ── Executive Summary (auto-generated findings) ──
-    $findings = [System.Collections.Generic.List[string]]::new()
-
     $scenariosWithMetrics2 = @($scenarioResults | Where-Object { $_.process_metrics })
 
+    $cpuData = @()
     foreach ($sr in $scenarioResults) {
         if ($sr.total_sensor_avg_cpu_percent) {
-            $findings.Add("Sensor CPU averaged <strong>$([math]::Round([double]$sr.total_sensor_avg_cpu_percent, 1))%</strong> during <code>$($sr.scenario)</code>")
+            $cpuData += @{ scenario = $sr.scenario; cpu = [double]$sr.total_sensor_avg_cpu_percent }
         }
     }
-
+    $memData = @()
     foreach ($sr in $scenariosWithMetrics2) {
         $pm = $sr.process_metrics
         $totalMem = 0.0
@@ -1516,27 +1515,39 @@ $($script:SharedCss)
             elseif ($pm -is [hashtable] -and $pm.ContainsKey($pn)) { $procData = $pm[$pn] }
             if ($procData) { $totalMem += [double]$procData.peak_memory_mb }
         }
-        if ($totalMem -gt 0) {
-            $findings.Add("Sensor peak memory was <strong>$([math]::Round($totalMem, 0)) MB</strong> during <code>$($sr.scenario)</code>")
-        }
+        if ($totalMem -gt 0) { $memData += @{ scenario = $sr.scenario; mem = $totalMem } }
     }
 
-    foreach ($sr in $scenarioResults) {
-        if ($sr.disk_write_peak_kbps -and [double]$sr.disk_write_peak_kbps -ge 10000) {
-            $findings.Add("Disk write peaked at <strong>$([math]::Round([double]$sr.disk_write_peak_kbps / 1024, 1)) MB/s</strong> during <code>$($sr.scenario)</code>")
-        }
-    }
+    $avgCpu = if ($cpuData.Count -gt 0) { [math]::Round(($cpuData | ForEach-Object { $_.cpu } | Measure-Object -Average).Average, 1) } else { 0 }
+    $peakCpuEntry = if ($cpuData.Count -gt 0) { $cpuData | Sort-Object -Property cpu -Descending | Select-Object -First 1 } else { $null }
+    $peakMemEntry = if ($memData.Count -gt 0) { $memData | Sort-Object -Property mem -Descending | Select-Object -First 1 } else { $null }
+    $avgMem = if ($memData.Count -gt 0) { [math]::Round(($memData | ForEach-Object { $_.mem } | Measure-Object -Average).Average, 0) } else { 0 }
+    $topCpuScenarios = @($cpuData | Sort-Object -Property cpu -Descending | Select-Object -First 3)
+    $topMemScenarios = @($memData | Sort-Object -Property mem -Descending | Select-Object -First 3)
 
     $execSummaryHtml = @"
 <h2>Executive Summary</h2>
 <div class="callout">
 <strong>Highlights from this test run ($($scenarioResults.Count) scenarios on $hostName):</strong>
 </div>
+<table>
+<tr><th>Metric</th><th>Average</th><th>Worst Case</th><th>Worst Scenario</th></tr>
+<tr><td><strong>Sensor CPU</strong></td><td class="numeric">$avgCpu%</td><td class="numeric"><strong>$(if ($peakCpuEntry) { "$([math]::Round($peakCpuEntry.cpu, 1))%" } else { '-' })</strong></td><td>$(if ($peakCpuEntry) { "<code>$($peakCpuEntry.scenario)</code>" } else { '-' })</td></tr>
+<tr><td><strong>Sensor Memory (Peak RSS)</strong></td><td class="numeric">$avgMem MB</td><td class="numeric"><strong>$(if ($peakMemEntry) { "$([math]::Round($peakMemEntry.mem, 0)) MB" } else { '-' })</strong></td><td>$(if ($peakMemEntry) { "<code>$($peakMemEntry.scenario)</code>" } else { '-' })</td></tr>
+</table>
 "@
-    if ($findings.Count -gt 0) {
-        $execSummaryHtml += "<ul>"
-        foreach ($f in $findings) { $execSummaryHtml += "<li class=`"finding`">$f</li>" }
-        $execSummaryHtml += "</ul>"
+
+    if ($topCpuScenarios.Count -gt 0) {
+        $execSummaryHtml += "<p><strong>Top 3 CPU-intensive scenarios:</strong> "
+        $parts = @()
+        foreach ($s in $topCpuScenarios) { $parts += "<code>$($s.scenario)</code> ($([math]::Round($s.cpu, 1))%)" }
+        $execSummaryHtml += ($parts -join ", ") + "</p>"
+    }
+    if ($topMemScenarios.Count -gt 0) {
+        $execSummaryHtml += "<p><strong>Top 3 memory-intensive scenarios:</strong> "
+        $parts = @()
+        foreach ($s in $topMemScenarios) { $parts += "<code>$($s.scenario)</code> ($([math]::Round($s.mem, 0)) MB)" }
+        $execSummaryHtml += ($parts -join ", ") + "</p>"
     }
 
     # ── Bottom Line ──
