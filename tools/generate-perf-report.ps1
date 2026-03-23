@@ -1519,11 +1519,11 @@ $($script:SharedCss)
     }
 
     $avgCpu = if ($cpuData.Count -gt 0) { [math]::Round(($cpuData | ForEach-Object { $_.cpu } | Measure-Object -Average).Average, 1) } else { 0 }
-    $peakCpuEntry = if ($cpuData.Count -gt 0) { $cpuData | Sort-Object -Property cpu -Descending | Select-Object -First 1 } else { $null }
-    $peakMemEntry = if ($memData.Count -gt 0) { $memData | Sort-Object -Property mem -Descending | Select-Object -First 1 } else { $null }
+    $peakCpuEntry = if ($cpuData.Count -gt 0) { $cpuData | Sort-Object { [double]$_.cpu } -Descending | Select-Object -First 1 } else { $null }
+    $peakMemEntry = if ($memData.Count -gt 0) { $memData | Sort-Object { [double]$_.mem } -Descending | Select-Object -First 1 } else { $null }
     $avgMem = if ($memData.Count -gt 0) { [math]::Round(($memData | ForEach-Object { $_.mem } | Measure-Object -Average).Average, 0) } else { 0 }
-    $topCpuScenarios = @($cpuData | Sort-Object -Property cpu -Descending | Select-Object -First 3)
-    $topMemScenarios = @($memData | Sort-Object -Property mem -Descending | Select-Object -First 3)
+    $topCpuScenarios = @($cpuData | Sort-Object { [double]$_.cpu } -Descending | Select-Object -First 3)
+    $topMemScenarios = @($memData | Sort-Object { [double]$_.mem } -Descending | Select-Object -First 3)
 
     $execSummaryHtml = @"
 <h2>Executive Summary</h2>
