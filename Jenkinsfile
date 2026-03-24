@@ -432,6 +432,28 @@ print('Bootstrap complete.')
                 }
             }
 
+            stage('Ensure Edge Browser') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    container('python') {
+                        sh """
+                            sshpass -p '${VM_PASS}' ssh ${SSH_OPTS} ${VM_USER}@${vmIp} \
+                                "powershell -Command \\"\\
+                                \\\$edgePaths = @(\\
+                                    (Join-Path \\\${env:ProgramFiles(x86)} 'Microsoft\\\\Edge\\\\Application\\\\msedge.exe'),\\
+                                    (Join-Path \\\$env:ProgramFiles 'Microsoft\\\\Edge\\\\Application\\\\msedge.exe')\\
+                                );\\
+                                \\\$found = \\\$false;\\
+                                foreach (\\\$p in \\\$edgePaths) { if (Test-Path \\\$p) { Write-Host 'Edge already installed at:' \\\$p; \\\$found = \\\$true; break } };\\
+                                if (-not \\\$found) {\\
+                                    Write-Host 'Edge not found, installing via winget...';\\
+                                    winget install Microsoft.Edge --accept-package-agreements --accept-source-agreements --silent --disable-interactivity 2>&1;\\
+                                    if (\\\$LASTEXITCODE -ne 0) { Write-Host 'WARNING: Edge install exited with code' \\\$LASTEXITCODE } else { Write-Host 'Edge installed successfully' }\\
+                                }\\""
+                        """
+                    }
+                }
+            }
+
             stage('Run Perf Tests') {
                 container('python') {
                     String profilingFlags = ''

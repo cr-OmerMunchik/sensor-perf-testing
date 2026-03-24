@@ -177,10 +177,10 @@ if ($LightMode) {
         "process_storm"        = @{ Params = @{ ProcessCount = 30; Bursts = 10 };                                     Description = "Rapid process spawn/terminate - light (~3 min)" }
         "rpc_generation"       = @{ Params = @{ QueryCount = 100; Iterations = 10 };                                  Description = "WMI/RPC query loop - light (~2 min)" }
         "service_cycle"        = @{ Params = @{ Cycles = 20 };                                                        Description = "Service create/start/stop/delete - light (~2 min)" }
-        "user_account_modify"  = @{ Params = @{ Cycles = 20 };                                                        Description = "User account create/modify/delete - light (~1 min)" }
+        "user_account_modify"  = @{ Params = @{ Cycles = 80 };                                                       Description = "User account create/modify/delete - light (~1 min)" }
         "browser_streaming"    = @{ Params = @{ DurationSeconds = 180 };                                              Description = "Browser streaming session - light (3 min)" }
-        "driver_load"          = @{ Params = @{ Cycles = 3 };                                                         Description = "Driver load via Defender restart - light (~1 min)" }
-        "file_stress_loop"     = @{ Params = @{ LoopCount = 500; Iterations = 5 };                                    Description = "File create/rename/delete loop - light (~3 min)" }
+        "driver_load"          = @{ Params = @{ Cycles = 8 };                                                         Description = "Driver load via Defender restart - light (~1.5 min)" }
+        "file_stress_loop"     = @{ Params = @{ LoopCount = 500; Iterations = 15 };                                   Description = "File create/rename/delete loop - light (~1.5 min)" }
         "zip_extraction"       = @{ Params = @{ FileCount = 2000; Iterations = 3 };                                   Description = "ZIP extraction workload - light (~3 min)" }
         "file_storm"           = @{ Params = @{ FileCount = 2000; Bursts = 5 };                                       Description = "Mass file create/modify/delete bursts - light (~3 min)" }
         "combined_high_density" = @{ Params = @{ DurationSeconds = 300; FileLoopCount = 200; RegistryLoopCount = 200; NetworkRequestCount = 50 }; Description = "All generators in parallel - light (5 min)" }
