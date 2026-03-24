@@ -531,17 +531,24 @@ try {
                             if (\\\$jsons.Count -eq 0) { Write-Host '{}'; exit 0 };\\
                             \\\$total = \\\$jsons.Count;\\
                             \\\$completed = @(\\\$jsons | Where-Object { \\\$_.duration_seconds -gt 0 }).Count;\\
-                            \\\$sAvgCpus = @(\\\$jsons | Where-Object { \\\$_.total_sensor_avg_cpu_percent } | ForEach-Object { [double]\\\$_.total_sensor_avg_cpu_percent });\\
+                            \\\$sensorProcs = @('minionhost','ActiveConsole');\\
+                            \\\$sAvgCpus = @(); \\\$sPeakCpus = @(); \\\$memAvgs = @(); \\\$memPeaks = @();\\
+                            foreach (\\\$j in \\\$jsons) {\\
+                                if (-not \\\$j.process_metrics) { continue };\\
+                                \\\$ac = 0.0; \\\$pc = 0.0; \\\$am = 0.0; \\\$pm2 = 0.0;\\
+                                foreach (\\\$pn in \\\$sensorProcs) {\\
+                                    if (\\\$j.process_metrics.PSObject.Properties[\\\$pn]) {\\
+                                        \\\$pd = \\\$j.process_metrics.\\\$pn;\\
+                                        \\\$ac += [double]\\\$pd.avg_cpu_percent;\\
+                                        \\\$pc += [double]\\\$pd.peak_cpu_percent;\\
+                                        \\\$am += [double]\\\$pd.avg_memory_mb;\\
+                                        \\\$pm2 += [double]\\\$pd.peak_memory_mb;\\
+                                    };\\
+                                };\\
+                                \\\$sAvgCpus += \\\$ac; \\\$sPeakCpus += \\\$pc; \\\$memAvgs += \\\$am; \\\$memPeaks += \\\$pm2;\\
+                            };\\
                             \\\$sAvgCpu = if (\\\$sAvgCpus) { [math]::Round((\\\$sAvgCpus | Measure-Object -Average).Average, 1) } else { -1 };\\
-                            \\\$sPeakCpu = if (\\\$sAvgCpus) { [math]::Round((\\\$sAvgCpus | Measure-Object -Maximum).Maximum, 1) } else { -1 };\\
-                            \\\$memAvgs = @(\\\$jsons | Where-Object { \\\$_.process_metrics } | ForEach-Object {\\
-                                \\\$sum = 0; \\\$_.process_metrics.PSObject.Properties | ForEach-Object { \\\$sum += [double]\\\$_.Value.avg_memory_mb };\\
-                                \\\$sum\\
-                            });\\
-                            \\\$memPeaks = @(\\\$jsons | Where-Object { \\\$_.process_metrics } | ForEach-Object {\\
-                                \\\$sum = 0; \\\$_.process_metrics.PSObject.Properties | ForEach-Object { \\\$sum += [double]\\\$_.Value.peak_memory_mb };\\
-                                \\\$sum\\
-                            });\\
+                            \\\$sPeakCpu = if (\\\$sPeakCpus) { [math]::Round((\\\$sPeakCpus | Measure-Object -Maximum).Maximum, 1) } else { -1 };\\
                             \\\$memAvg = if (\\\$memAvgs) { [math]::Round((\\\$memAvgs | Measure-Object -Average).Average, 0) } else { -1 };\\
                             \\\$memPeak = if (\\\$memPeaks) { [math]::Round((\\\$memPeaks | Measure-Object -Maximum).Maximum, 0) } else { -1 };\\
                             Write-Host ('{' + [char]34 + 'sAvgCpu' + [char]34 + ':' + \\\$sAvgCpu + ',' + [char]34 + 'sPeakCpu' + [char]34 + ':' + \\\$sPeakCpu + ',' + [char]34 + 'memAvg' + [char]34 + ':' + \\\$memAvg + ',' + [char]34 + 'memPeak' + [char]34 + ':' + \\\$memPeak + ',' + [char]34 + 'completed' + [char]34 + ':' + \\\$completed + ',' + [char]34 + 'total' + [char]34 + ':' + \\\$total + '}')\\""

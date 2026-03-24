@@ -1506,29 +1506,41 @@ $($script:SharedCss)
     $scenariosWithMetrics2 = @($scenarioResults | Where-Object { $_.process_metrics })
 
     $cpuData = @()
-    foreach ($sr in $scenarioResults) {
-        if ($sr.total_sensor_avg_cpu_percent) {
-            $cpuData += @{ scenario = $sr.scenario; cpu = [double]$sr.total_sensor_avg_cpu_percent }
-        }
-    }
-    $memData = @()
     foreach ($sr in $scenariosWithMetrics2) {
         $pm = $sr.process_metrics
-        $totalMem = 0.0
+        $avgCpuVal = 0.0; $peakCpuVal = 0.0
         foreach ($pn in $sensorProcessNames) {
             $procData = $null
             if ($pm -is [PSCustomObject] -and $pm.PSObject.Properties[$pn]) { $procData = $pm.$pn }
             elseif ($pm -is [hashtable] -and $pm.ContainsKey($pn)) { $procData = $pm[$pn] }
-            if ($procData) { $totalMem += [double]$procData.peak_memory_mb }
+            if ($procData) {
+                $avgCpuVal += [double]$procData.avg_cpu_percent
+                $peakCpuVal += [double]$procData.peak_cpu_percent
+            }
         }
-        if ($totalMem -gt 0) { $memData += @{ scenario = $sr.scenario; mem = $totalMem } }
+        $cpuData += @{ scenario = $sr.scenario; cpu = $avgCpuVal; peakCpu = $peakCpuVal }
+    }
+    $memData = @()
+    foreach ($sr in $scenariosWithMetrics2) {
+        $pm = $sr.process_metrics
+        $totalAvgMem = 0.0; $totalPeakMem = 0.0
+        foreach ($pn in $sensorProcessNames) {
+            $procData = $null
+            if ($pm -is [PSCustomObject] -and $pm.PSObject.Properties[$pn]) { $procData = $pm.$pn }
+            elseif ($pm -is [hashtable] -and $pm.ContainsKey($pn)) { $procData = $pm[$pn] }
+            if ($procData) {
+                $totalAvgMem += [double]$procData.avg_memory_mb
+                $totalPeakMem += [double]$procData.peak_memory_mb
+            }
+        }
+        if ($totalPeakMem -gt 0) { $memData += @{ scenario = $sr.scenario; avgMem = $totalAvgMem; mem = $totalPeakMem } }
     }
 
     $avgCpu = if ($cpuData.Count -gt 0) { [math]::Round(($cpuData | ForEach-Object { $_.cpu } | Measure-Object -Average).Average, 1) } else { 0 }
-    $peakCpuEntry = if ($cpuData.Count -gt 0) { $cpuData | Sort-Object { [double]$_.cpu } -Descending | Select-Object -First 1 } else { $null }
+    $peakCpuEntry = if ($cpuData.Count -gt 0) { $cpuData | Sort-Object { [double]$_.peakCpu } -Descending | Select-Object -First 1 } else { $null }
     $peakMemEntry = if ($memData.Count -gt 0) { $memData | Sort-Object { [double]$_.mem } -Descending | Select-Object -First 1 } else { $null }
     $avgMem = if ($memData.Count -gt 0) { [math]::Round(($memData | ForEach-Object { $_.mem } | Measure-Object -Average).Average, 0) } else { 0 }
-    $topCpuScenarios = @($cpuData | Sort-Object { [double]$_.cpu } -Descending | Select-Object -First 3)
+    $topCpuScenarios = @($cpuData | Sort-Object { [double]$_.peakCpu } -Descending | Select-Object -First 3)
     $topMemScenarios = @($memData | Sort-Object { [double]$_.mem } -Descending | Select-Object -First 3)
 
     $execSummaryHtml = @"
@@ -1538,7 +1550,7 @@ $($script:SharedCss)
 </div>
 <table>
 <tr><th>Metric</th><th>Average</th><th>Worst Case</th><th>Worst Scenario</th></tr>
-<tr><td><strong>Sensor CPU</strong></td><td class="numeric">$avgCpu%</td><td class="numeric"><strong>$(if ($peakCpuEntry) { "$([math]::Round($peakCpuEntry.cpu, 1))%" } else { '-' })</strong></td><td>$(if ($peakCpuEntry) { "<code>$($peakCpuEntry.scenario)</code>" } else { '-' })</td></tr>
+<tr><td><strong>Sensor CPU</strong></td><td class="numeric">$avgCpu%</td><td class="numeric"><strong>$(if ($peakCpuEntry) { "$([math]::Round($peakCpuEntry.peakCpu, 1))%" } else { '-' })</strong></td><td>$(if ($peakCpuEntry) { "<code>$($peakCpuEntry.scenario)</code>" } else { '-' })</td></tr>
 <tr><td><strong>Sensor Memory (Peak RSS)</strong></td><td class="numeric">$avgMem MB</td><td class="numeric"><strong>$(if ($peakMemEntry) { "$([math]::Round($peakMemEntry.mem, 0)) MB" } else { '-' })</strong></td><td>$(if ($peakMemEntry) { "<code>$($peakMemEntry.scenario)</code>" } else { '-' })</td></tr>
 </table>
 "@
@@ -1546,7 +1558,7 @@ $($script:SharedCss)
     if ($topCpuScenarios.Count -gt 0) {
         $execSummaryHtml += "<p><strong>Top 3 CPU-intensive scenarios:</strong> "
         $parts = @()
-        foreach ($s in $topCpuScenarios) { $parts += "<code>$($s.scenario)</code> ($([math]::Round($s.cpu, 1))%)" }
+        foreach ($s in $topCpuScenarios) { $parts += "<code>$($s.scenario)</code> ($([math]::Round($s.peakCpu, 1))%)" }
         $execSummaryHtml += ($parts -join ", ") + "</p>"
     }
     if ($topMemScenarios.Count -gt 0) {
@@ -1558,22 +1570,21 @@ $($script:SharedCss)
 
     # ── Conclusions (merged Bottom Line + Conclusions) ──
     $worstIdleCpu = 0.0; $worstLoadCpu = 0.0; $worstMem = 0.0
-    foreach ($sr in $scenarioResults) {
-        if (-not $sr.total_sensor_avg_cpu_percent) { continue }
-        $cpu = [double]$sr.total_sensor_avg_cpu_percent
-        if ($sr.scenario -eq "idle_baseline") { if ($cpu -gt $worstIdleCpu) { $worstIdleCpu = $cpu } }
-        else { if ($cpu -gt $worstLoadCpu) { $worstLoadCpu = $cpu } }
-    }
     foreach ($sr in $scenariosWithMetrics2) {
         $pm = $sr.process_metrics
-        $totalMem = 0.0
+        $totalPeakCpu = 0.0; $totalPeakMem = 0.0
         foreach ($pn in $sensorProcessNames) {
             $procData = $null
             if ($pm -is [PSCustomObject] -and $pm.PSObject.Properties[$pn]) { $procData = $pm.$pn }
             elseif ($pm -is [hashtable] -and $pm.ContainsKey($pn)) { $procData = $pm[$pn] }
-            if ($procData) { $totalMem += [double]$procData.peak_memory_mb }
+            if ($procData) {
+                $totalPeakCpu += [double]$procData.peak_cpu_percent
+                $totalPeakMem += [double]$procData.peak_memory_mb
+            }
         }
-        if ($totalMem -gt $worstMem) { $worstMem = $totalMem }
+        if ($sr.scenario -eq "idle_baseline") { if ($totalPeakCpu -gt $worstIdleCpu) { $worstIdleCpu = $totalPeakCpu } }
+        else { if ($totalPeakCpu -gt $worstLoadCpu) { $worstLoadCpu = $totalPeakCpu } }
+        if ($totalPeakMem -gt $worstMem) { $worstMem = $totalPeakMem }
     }
 
     $worstDiskWriteKbps = 0.0
