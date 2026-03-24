@@ -1427,31 +1427,37 @@ $($script:SharedCss)
         if ($hasUptimeOrDb) {
             [void]$sb.AppendLine("<h2>Sensor Process Uptime &amp; DB Size</h2>")
             [void]$sb.AppendLine(@"
-<div class="callout"><strong>What this shows:</strong> Percentage of metric samples during each scenario where the process was detected running. 100% means the process was present at every sample. Process restarts during a scenario indicate stability issues.</div>
+<div class="callout"><strong>What this shows:</strong> Percentage of metric samples during each scenario where the process was detected running. 100% means the process was present at every sample. Scenarios shorter than 30 seconds ("too short") have too few samples for a reliable uptime reading. "skipped" means the scenario did not run.</div>
 "@)
 
             $mainProcs = @("minionhost", "ActiveConsole")
             [void]$sb.AppendLine("<table><tr><th>Scenario</th>")
             foreach ($mp in $mainProcs) { [void]$sb.AppendLine("<th>$mp Uptime</th><th>$mp Restarts</th>") }
             [void]$sb.AppendLine("<th>DB Size (MB)</th></tr>")
+            $minSamplesForUptime = 6
             foreach ($sr in $scenarioResults) {
                 $pm = $sr.process_metrics
+                $sampleCount = if ($sr.metrics_sample_count) { [int]$sr.metrics_sample_count } else { 0 }
+                $isSkipped = ($sr.skipped -eq $true) -or ($sr.skipped -eq "True")
                 [void]$sb.AppendLine("<tr><td><code>$($sr.scenario)</code></td>")
                 foreach ($mp in $mainProcs) {
+                    if ($isSkipped) {
+                        [void]$sb.AppendLine("<td class=`"numeric`" style=`"color:#999;`">skipped</td><td class=`"numeric`" style=`"color:#999;`">-</td>")
+                        continue
+                    }
                     $procData = $null
                     if ($pm -is [PSCustomObject] -and $pm.PSObject.Properties[$mp]) { $procData = $pm.$mp }
                     elseif ($pm -is [hashtable] -and $pm.ContainsKey($mp)) { $procData = $pm[$mp] }
                     $hasPct = $procData -and $procData.PSObject -and $procData.PSObject.Properties['uptime_pct']
                     if (-not $hasPct -and $procData -is [hashtable]) { $hasPct = $procData.ContainsKey('uptime_pct') }
                     if ($hasPct -and [double]$procData.uptime_pct -ge 0) {
-                        $uptimePct = [math]::Round([double]$procData.uptime_pct, 0)
-                        $uptimeColor = if ($uptimePct -ge 100) { "#27ae60" } elseif ($uptimePct -ge 90) { "#f39c12" } else { "#e74c3c" }
-                        [void]$sb.AppendLine("<td class=`"numeric`" style=`"color:$uptimeColor; font-weight:bold;`">${uptimePct}%</td>")
-                        $restartCount = if ($procData.restarts) { [int]$procData.restarts } else { 0 }
-                        $restartColor = if ($restartCount -gt 0) { "color:#e74c3c; font-weight:bold;" } else { "" }
-                        [void]$sb.AppendLine("<td class=`"numeric`" style=`"$restartColor`">$restartCount</td>")
-                    } elseif ($procData -and $procData.uptime_minutes -ge 0) {
-                        [void]$sb.AppendLine("<td class=`"numeric`">-</td>")
+                        if ($sampleCount -lt $minSamplesForUptime) {
+                            [void]$sb.AppendLine("<td class=`"numeric`" style=`"color:#999;`" title=`"Only $sampleCount samples collected (need $minSamplesForUptime+)`">too short</td>")
+                        } else {
+                            $uptimePct = [math]::Min([math]::Round([double]$procData.uptime_pct, 0), 100)
+                            $uptimeColor = if ($uptimePct -ge 100) { "#27ae60" } elseif ($uptimePct -ge 90) { "#f39c12" } else { "#e74c3c" }
+                            [void]$sb.AppendLine("<td class=`"numeric`" style=`"color:$uptimeColor; font-weight:bold;`">${uptimePct}%</td>")
+                        }
                         $restartCount = if ($procData.restarts) { [int]$procData.restarts } else { 0 }
                         $restartColor = if ($restartCount -gt 0) { "color:#e74c3c; font-weight:bold;" } else { "" }
                         [void]$sb.AppendLine("<td class=`"numeric`" style=`"$restartColor`">$restartCount</td>")
@@ -1550,7 +1556,7 @@ $($script:SharedCss)
         $execSummaryHtml += ($parts -join ", ") + "</p>"
     }
 
-    # ── Bottom Line ──
+    # ── Conclusions (merged Bottom Line + Conclusions) ──
     $worstIdleCpu = 0.0; $worstLoadCpu = 0.0; $worstMem = 0.0
     foreach ($sr in $scenarioResults) {
         if (-not $sr.total_sensor_avg_cpu_percent) { continue }
@@ -1575,35 +1581,21 @@ $($script:SharedCss)
         if ($sr.disk_write_peak_kbps -and [double]$sr.disk_write_peak_kbps -gt $worstDiskWriteKbps) { $worstDiskWriteKbps = [double]$sr.disk_write_peak_kbps }
     }
 
-    $kpiTable = @"
-<h2>Bottom Line</h2>
-<table>
-<tr><th>Metric</th><th>Measured (Worst Case)</th></tr>
-"@
-    $kpiTable += "<tr><td>Sensor CPU (Idle Baseline)</td><td class=`"numeric`"><strong>$([math]::Round($worstIdleCpu, 1))%</strong></td></tr>"
-    $kpiTable += "<tr><td>Sensor CPU (Under Load)</td><td class=`"numeric`"><strong>$([math]::Round($worstLoadCpu, 1))%</strong></td></tr>"
-    $kpiTable += "<tr><td>Sensor Memory (RSS Peak)</td><td class=`"numeric`"><strong>$([math]::Round($worstMem, 0)) MB</strong></td></tr>"
-    if ($worstDiskWriteKbps -gt 0) {
-        $kpiTable += "<tr><td>Disk Write (Peak)</td><td class=`"numeric`"><strong>$([math]::Round($worstDiskWriteKbps / 1024, 1)) MB/s</strong></td></tr>"
-    }
-    $kpiTable += "</table>"
-
     $conclusionsHtml = @"
 <h2>Conclusions</h2>
 <div class="bottom-line">
 <p><strong>Test completed on $hostName ($NumCores cores).</strong></p>
-<ul>
-<li><strong>CPU Impact:</strong> Sensor averaged <strong>$([math]::Round($worstIdleCpu, 1))%</strong> at idle and <strong>$([math]::Round($worstLoadCpu, 1))%</strong> under load across $($scenarioResults.Count) scenarios.</li>
-<li><strong>Memory Impact:</strong> Peak total sensor working set was <strong>$([math]::Round($worstMem, 0)) MB</strong>.</li>
+<table>
+<tr><th>Metric</th><th>Measured (Worst Case)</th></tr>
+<tr><td>Sensor CPU (Idle Baseline)</td><td class="numeric"><strong>$([math]::Round($worstIdleCpu, 1))%</strong></td></tr>
+<tr><td>Sensor CPU (Under Load)</td><td class="numeric"><strong>$([math]::Round($worstLoadCpu, 1))%</strong></td></tr>
+<tr><td>Sensor Memory (RSS Peak)</td><td class="numeric"><strong>$([math]::Round($worstMem, 0)) MB</strong></td></tr>
 "@
     if ($worstDiskWriteKbps -gt 0) {
-        $conclusionsHtml += "<li><strong>Disk I/O:</strong> Peak disk write rate was <strong>$([math]::Round($worstDiskWriteKbps / 1024, 1)) MB/s</strong>.</li>"
+        $conclusionsHtml += "<tr><td>Disk Write (Peak)</td><td class=`"numeric`"><strong>$([math]::Round($worstDiskWriteKbps / 1024, 1)) MB/s</strong></td></tr>"
     }
-    $conclusionsHtml += @"
-</ul>
-<p><em>Report generated: $genTime</em></p>
-</div>
-"@
+    $conclusionsHtml += "</table>"
+    $conclusionsHtml += "<p><em>Report generated: $genTime</em></p></div>"
 
     # Insert Executive Summary right after the test info + scenario descriptions
     $currentHtml = $sb.ToString()
@@ -1615,7 +1607,6 @@ $($script:SharedCss)
         [void]$sb.Append($currentHtml.Substring($cpuDefIdx))
     }
 
-    [void]$sb.AppendLine($kpiTable)
     [void]$sb.AppendLine($conclusionsHtml)
     [void]$sb.AppendLine("</body></html>")
     return $sb.ToString()
