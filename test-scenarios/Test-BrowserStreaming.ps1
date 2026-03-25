@@ -38,11 +38,26 @@ $browserProcess = "$Browser.exe"
 
 $browserPath = Get-Command $browserProcess -ErrorAction SilentlyContinue
 if (-not $browserPath) {
-    Write-Host "[SKIP] $browserProcess not found on this system. Skipping browser streaming." -ForegroundColor Yellow
-    Add-ScenarioMetric -Key "skipped" -Value $true
-    Add-ScenarioMetric -Key "reason" -Value "$browserProcess not installed"
-    Complete-Scenario
-    return
+    $knownPaths = @(
+        "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
+        "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
+        "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+        "$env:ProgramFiles\Google\Chrome\Application\chrome.exe"
+    )
+    foreach ($kp in $knownPaths) {
+        if ($kp -like "*\$browserProcess" -and (Test-Path $kp)) {
+            $browserProcess = $kp
+            Write-Host "[INFO] Found $Browser at known path: $kp" -ForegroundColor Cyan
+            break
+        }
+    }
+    if ($browserProcess -eq "$Browser.exe") {
+        Write-Host "[SKIP] $browserProcess not found on this system. Skipping browser streaming." -ForegroundColor Yellow
+        Add-ScenarioMetric -Key "skipped" -Value $true
+        Add-ScenarioMetric -Key "reason" -Value "$browserProcess not installed"
+        Complete-Scenario
+        return
+    }
 }
 
 Write-Host "Launching $browserProcess -> $Url" -ForegroundColor White

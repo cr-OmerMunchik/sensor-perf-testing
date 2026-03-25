@@ -50,9 +50,22 @@ if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
 # ---------- 1. Browser streaming (background) ----------
 Write-Host "[1/4] Launching browser streaming..." -ForegroundColor Cyan
 $browserProc = $null
-$browserExe = Get-Command "msedge.exe" -ErrorAction SilentlyContinue
-if ($browserExe) {
-    $browserProc = Start-Process "msedge.exe" -ArgumentList "https://www.youtube.com/watch?v=dQw4w9WgXcQ" -PassThru
+$browserExePath = $null
+$browserCmd = Get-Command "msedge.exe" -ErrorAction SilentlyContinue
+if ($browserCmd) {
+    $browserExePath = $browserCmd.Source
+} else {
+    $knownPaths = @(
+        "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
+        "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
+    )
+    foreach ($kp in $knownPaths) {
+        if (Test-Path $kp) { $browserExePath = $kp; break }
+    }
+}
+if ($browserExePath) {
+    Write-Host "  Using browser: $browserExePath" -ForegroundColor Gray
+    $browserProc = Start-Process $browserExePath -ArgumentList "https://www.youtube.com/watch?v=dQw4w9WgXcQ" -PassThru
 } else {
     Write-Host "  [SKIP] msedge.exe not found, skipping browser streaming." -ForegroundColor Yellow
 }
