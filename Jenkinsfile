@@ -472,8 +472,10 @@ print('Bootstrap complete.')
                     """
 
                     // Write a launcher script that runs the perf test and writes a completion marker
+                    def sensorVersionForVm = env.SENSOR_VERSION ?: ''
                     writeFile file: 'run-perf-wrapper.ps1', text: """
 \$ErrorActionPreference = 'Continue'
+\$env:SENSOR_VERSION = '${sensorVersionForVm}'
 \$logFile = 'C:\\PerfTest\\perf-output.log'
 \$markerFile = 'C:\\PerfTest\\perf-done.marker'
 Remove-Item \$markerFile -ErrorAction SilentlyContinue
