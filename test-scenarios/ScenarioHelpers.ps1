@@ -404,6 +404,29 @@ function Complete-Scenario {
     Add-ScenarioMetric -Key "metrics_collection_enabled" -Value (Test-MetricsCollectionEnabled)
     Add-ScenarioMetric -Key "num_cores" -Value ([Environment]::ProcessorCount)
 
+    # Detect sensor version from installed binaries or env var
+    $sensorVersion = $env:SENSOR_VERSION
+    if (-not $sensorVersion) {
+        $versionSearchPaths = @(
+            "C:\Program Files\Cybereason ActiveProbe\minionhost.exe",
+            "C:\Program Files\Cybereason ActiveProbe\ActiveConsole.exe",
+            "C:\Program Files\Cybereason\Sunbird\sunbird.exe",
+            "C:\Program Files\Cybereason\Sunbird\autopilot.exe"
+        )
+        foreach ($vp in $versionSearchPaths) {
+            if (Test-Path $vp) {
+                try {
+                    $vi = (Get-Item $vp).VersionInfo
+                    $sensorVersion = if ($vi.ProductVersion) { $vi.ProductVersion } elseif ($vi.FileVersion) { $vi.FileVersion } else { $null }
+                    if ($sensorVersion) { break }
+                } catch {}
+            }
+        }
+    }
+    if ($sensorVersion) {
+        Add-ScenarioMetric -Key "sensor_version" -Value $sensorVersion
+    }
+
     Write-Host "`n========================================" -ForegroundColor Green
     Write-Host " Scenario Complete: $($script:ScenarioName)" -ForegroundColor Green
     Write-Host " Duration: $([math]::Round($duration, 1)) seconds" -ForegroundColor White

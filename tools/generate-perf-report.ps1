@@ -261,7 +261,7 @@ $($script:SharedCss)
 </head>
 <body>
 <h1>Cybereason Sensor Performance Report</h1>
-<p><strong>Generated:</strong> $genTime</p>
+<p><strong>Generated:</strong> $genTime$(if ($env:SENSOR_VERSION) { " &nbsp;|&nbsp; <strong>Sensor Version:</strong> $($env:SENSOR_VERSION)" })</p>
 "@)
 
     # Test start/end/duration
@@ -1168,6 +1168,9 @@ function Build-SelfServiceReport {
     $hostName = ($scenarioResults | Where-Object { $_.host } | Select-Object -First 1).host
     if (-not $hostName) { $hostName = $env:COMPUTERNAME }
 
+    $sensorVersion = ($scenarioResults | Where-Object { $_.sensor_version } | Select-Object -First 1).sensor_version
+    if (-not $sensorVersion) { $sensorVersion = $env:SENSOR_VERSION }
+
     $sensorProcessNames = @("minionhost", "ActiveConsole", "CrsSvc", "PylumLoader", "AmSvc", "WscIfSvc", "ExecutionPreventionSvc", "CrAmTray", "Nnx", "CrDrvCtrl")
 
     $sb = [System.Text.StringBuilder]::new()
@@ -1196,11 +1199,15 @@ $($script:SharedCss)
     $startFmt = if ($firstStart) { ([datetime]$firstStart).ToString('yyyy-MM-dd HH:mm:ss') } else { "?" }
     $endFmt = if ($lastEnd) { ([datetime]$lastEnd).ToString('yyyy-MM-dd HH:mm:ss') } else { "?" }
 
-    [void]$sb.AppendLine("<p><strong>Host:</strong> $hostName &nbsp;|&nbsp; <strong>Cores:</strong> $NumCores &nbsp;|&nbsp; <strong>Start:</strong> $startFmt &nbsp;|&nbsp; <strong>End:</strong> $endFmt &nbsp;|&nbsp; <strong>Duration:</strong> $totalDurMin min</p>")
+    $versionLine = if ($sensorVersion) { " &nbsp;|&nbsp; <strong>Sensor Version:</strong> $sensorVersion" } else { "" }
+    [void]$sb.AppendLine("<p><strong>Host:</strong> $hostName &nbsp;|&nbsp; <strong>Cores:</strong> $NumCores &nbsp;|&nbsp; <strong>Start:</strong> $startFmt &nbsp;|&nbsp; <strong>End:</strong> $endFmt &nbsp;|&nbsp; <strong>Duration:</strong> $totalDurMin min${versionLine}</p>")
 
     [void]$sb.AppendLine("<h2>Test Information</h2>")
     [void]$sb.AppendLine("<table>")
     [void]$sb.AppendLine("<tr><th>Property</th><th>Value</th></tr>")
+    if ($sensorVersion) {
+        [void]$sb.AppendLine("<tr><td>Sensor version</td><td><strong>$sensorVersion</strong></td></tr>")
+    }
     [void]$sb.AppendLine("<tr><td>Host</td><td>$hostName ($NumCores cores)</td></tr>")
     [void]$sb.AppendLine("<tr><td>Scenarios run</td><td>$($scenarioResults.Count)</td></tr>")
     [void]$sb.AppendLine("<tr><td>Data source</td><td>Inline process metrics (Windows Performance Counters, 5s sampling)</td></tr>")
@@ -1626,7 +1633,7 @@ $($script:SharedCss)
 # ── Build the separate ETL report ──
 
 function Build-EtlReport {
-    param($EtlData, [switch]$UseSymbols, [string]$TestStart, [string]$TestEnd, [string]$TestDuration)
+    param($EtlData, [switch]$UseSymbols, [string]$TestStart, [string]$TestEnd, [string]$TestDuration, [string]$SensorVersion)
 
     $sb = [System.Text.StringBuilder]::new()
     $genTime = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
@@ -1645,6 +1652,7 @@ $($script:SharedCss)
 <h1>ETL Trace Analysis (CPU Hotspots)</h1>
 "@)
     $timeLine = "<p>"
+    if ($SensorVersion) { $timeLine += "<strong>Sensor Version:</strong> $SensorVersion &nbsp;|&nbsp; " }
     if ($TestStart) { $timeLine += "<strong>Start:</strong> $TestStart" }
     if ($TestEnd) { $timeLine += " &nbsp;|&nbsp; <strong>End:</strong> $TestEnd" }
     if ($TestDuration) { $timeLine += " &nbsp;|&nbsp; <strong>Duration:</strong> $TestDuration min" }
@@ -1691,6 +1699,9 @@ $($script:SharedCss)
         [void]$sb.AppendLine("<h2>Trace Summary</h2>")
         [void]$sb.AppendLine("<table>")
         [void]$sb.AppendLine("<tr><th>Property</th><th>Value</th></tr>")
+        if ($SensorVersion) {
+            [void]$sb.AppendLine("<tr><td>Sensor version</td><td><strong>$SensorVersion</strong></td></tr>")
+        }
         [void]$sb.AppendLine("<tr><td>Host</td><td>$traceRole</td></tr>")
         [void]$sb.AppendLine("<tr><td>Scenarios</td><td>$($scenarioNames -join ', ') ($traceCount total)</td></tr>")
         [void]$sb.AppendLine("<tr><td>Total CPU Samples</td><td>$($globalTotalSamples.ToString('N0'))</td></tr>")
@@ -1938,9 +1949,9 @@ if ($ScenarioResultsDir) {
     $report | Set-Content -Path $OutputPath -Encoding UTF8
     Write-Host "Performance report written to: $OutputPath" -ForegroundColor Green
 
-    # Extract timing info from scenario JSONs for ETL report header
+    # Extract timing info and sensor version from scenario JSONs for ETL report header
     $ssJsonFiles = Get-ChildItem -Path $ScenarioResultsDir -Filter "*.json" -File
-    $ssTimingStart = $null; $ssTimingEnd = $null; $ssTimingDur = $null
+    $ssTimingStart = $null; $ssTimingEnd = $null; $ssTimingDur = $null; $ssSensorVersion = $null
     if ($ssJsonFiles.Count -gt 0) {
         $ssResults = @()
         foreach ($f in $ssJsonFiles) {
@@ -1951,6 +1962,8 @@ if ($ScenarioResultsDir) {
         if ($ssFirst) { $ssTimingStart = ([datetime]$ssFirst).ToString('yyyy-MM-dd HH:mm:ss') }
         if ($ssLast) { $ssTimingEnd = ([datetime]$ssLast).ToString('yyyy-MM-dd HH:mm:ss') }
         if ($ssFirst -and $ssLast) { $ssTimingDur = [math]::Round(([datetime]$ssLast - [datetime]$ssFirst).TotalMinutes, 1).ToString() }
+        $ssSensorVersion = ($ssResults | Where-Object { $_.sensor_version } | Select-Object -First 1).sensor_version
+        if (-not $ssSensorVersion) { $ssSensorVersion = $env:SENSOR_VERSION }
     }
 
     if (-not $SkipEtl) {
@@ -2004,6 +2017,7 @@ if ($ScenarioResultsDir) {
             if ($ssTimingStart) { $etlBuildArgs['TestStart'] = $ssTimingStart }
             if ($ssTimingEnd) { $etlBuildArgs['TestEnd'] = $ssTimingEnd }
             if ($ssTimingDur) { $etlBuildArgs['TestDuration'] = $ssTimingDur }
+            if ($ssSensorVersion) { $etlBuildArgs['SensorVersion'] = $ssSensorVersion }
             $etlReport = Build-EtlReport @etlBuildArgs
             $etlReport | Set-Content -Path $EtlOutputPath -Encoding UTF8
             Write-Host "ETL report written to: $EtlOutputPath" -ForegroundColor Green
@@ -2107,7 +2121,8 @@ try {
 
     # --- Part 4: Generate ETL report ---
     Write-Host "Generating ETL report..." -ForegroundColor Cyan
-    $etlReport = Build-EtlReport -EtlData $etlData -UseSymbols:$UseSymbols | Out-String
+    $etlSensorVersion = $env:SENSOR_VERSION
+    $etlReport = Build-EtlReport -EtlData $etlData -UseSymbols:$UseSymbols -SensorVersion $etlSensorVersion | Out-String
     $etlReport | Set-Content -Path $EtlOutputPath -Encoding UTF8
     Write-Host "ETL report written to: $EtlOutputPath" -ForegroundColor Green
 
