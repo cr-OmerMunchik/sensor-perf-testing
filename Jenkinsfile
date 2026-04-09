@@ -275,7 +275,7 @@ for a in arts:
     "server": "z-razor-1-t.eng.cybereason.net",
     "port": "443",
     "organization": "cybereason",
-    "organizationId": "TGRAMT1XDGPP35VV58FD3NS11H",
+    "organizationKey": "TGRAMT1XDGPP35VV58FD3NS11H",
     "state": "ACTIVE_NORMAL",
     "discoveryServerUrl": "${PHOENIX_DISCOVERY_URL}",
     "isOIDPersonalization": true

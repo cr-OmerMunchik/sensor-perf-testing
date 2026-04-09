@@ -196,7 +196,7 @@ if ($existingProcs) {
 
 $installArgs = "/quiet"
 if ($PhoenixAuthKey) {
-    $installArgs = "DISCOVERY_SERVER_URL=$DiscoveryServerUrl ORGANIZATION_ID=$OrganizationId PHOENIX_AUTH_INSTALLATION_KEY=$PhoenixAuthKey /quiet"
+    $installArgs = "DISCOVERY_SERVER_URL=$DiscoveryServerUrl ORGANIZATION_KEY=$OrganizationId PHOENIX_AUTH_INSTALLATION_KEY=$PhoenixAuthKey /quiet"
 }
 Write-Host "[INFO] Running: $SensorExePath $installArgs"
 
